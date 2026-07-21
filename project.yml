@@ -1,6 +1,6 @@
 name: Arcly
 options:
-  bundleIdPrefix: com.orbis
+  bundleIdPrefix: com.qingshan
   deploymentTarget:
     macOS: "26.0"
   xcodeVersion: "26.4"

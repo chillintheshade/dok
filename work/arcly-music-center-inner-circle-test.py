@@ -27,8 +27,8 @@ def main() -> None:
     assert 'Image(systemName: "music.note")' in source and "24 * centerMusicControlScale" in source, (
         "the placeholder music note should scale with the album artwork"
     )
-    assert "centerLensRadius * 2 + 4" in source, (
-        "the visible center circle should use the fitted center lens radius"
+    assert "centerDiameter: centerLensRadius * 2" in source, (
+        "the shared Control Center glass edge should use the fitted center lens radius"
     )
     assert "centerLensRadius * 2 - 18" in source, (
         "music title width should be constrained by the fitted inner circle"

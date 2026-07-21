@@ -19,9 +19,9 @@ BG_BOTTOM = (30, 60, 120)
 
 # Screenshot configs: (filename, headline, subline)
 CONFIGS = [
-    ("01-pie-menu.png", "环形启动器", "应用切换 · 音乐控制 · 一触即达"),
-    ("02-settings-apps.png", "Pro 解锁更多", "12 个槽位 · 文件夹 · 自定义外观"),
-    ("01-pie-menu.png", "为 macOS 设计", "Liquid Glass · 原生体验"),
+    ("01-arcly-wheel.png", "环形启动器", "应用切换 · 音乐控制 · 一触即达"),
+    ("02-settings-apps.png", "轮盘按你习惯排列", "应用 · 文件夹 · 拖动排序"),
+    ("03-settings-options.png", "为 macOS 设计", "快捷键 · 外观 · 播放控制"),
 ]
 
 

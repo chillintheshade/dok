@@ -47,6 +47,142 @@ struct DonutShape: Shape {
     }
 }
 
+// MARK: - Native Glass Sampling
+
+struct NativeGlassSamplingLayer: NSViewRepresentable {
+    let cornerRadius: CGFloat
+    let intensity: Double
+
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let glass = NSGlassEffectView()
+        applyMaterial(to: glass)
+        return glass
+    }
+
+    func updateNSView(_ glass: NSGlassEffectView, context: Context) {
+        applyMaterial(to: glass)
+    }
+
+    private func applyMaterial(to glass: NSGlassEffectView) {
+        let clampedIntensity = min(max(intensity, 0), 1)
+        glass.style = .clear
+        glass.cornerRadius = cornerRadius
+        // Keep the native compositor fully active. Density changes through tint,
+        // matching Control Center instead of fading the entire glass surface.
+        glass.alphaValue = 1
+        glass.tintColor = NSColor.black.withAlphaComponent(
+            CGFloat(0.12 + clampedIntensity * 0.14)
+        )
+        glass.clipsToBounds = true
+        glass.layer?.cornerRadius = cornerRadius
+        glass.layer?.cornerCurve = .continuous
+        glass.layer?.masksToBounds = true
+    }
+}
+
+struct ControlCenterGlassToneLayer: View {
+    let diameter: CGFloat
+    let intensity: Double
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let strength = min(max(intensity, 0), 1)
+
+        ZStack {
+            Circle()
+                .fill(
+                    colorScheme == .dark
+                        ? Color.black.opacity(0.07 + 0.05 * strength)
+                        : Color.black.opacity(0.045 + 0.04 * strength)
+                )
+
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.10 * strength),
+                            Color.clear,
+                            Color.black.opacity(0.08 * strength)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .blendMode(.softLight)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.64),
+                            .init(color: Color.black.opacity(0.055 * strength), location: 1)
+                        ],
+                        center: .center,
+                        startRadius: diameter * 0.18,
+                        endRadius: diameter * 0.52
+                    )
+                )
+                .blendMode(.multiply)
+        }
+        .frame(width: diameter, height: diameter)
+        .allowsHitTesting(false)
+    }
+}
+
+struct ControlCenterGlassEdgeLayer: View {
+    let diameter: CGFloat
+    let centerDiameter: CGFloat
+    let intensity: Double
+
+    var body: some View {
+        let strength = min(max(intensity, 0), 1)
+
+        ZStack {
+            Circle()
+                .fill(Color.black.opacity(0.001))
+                .frame(width: diameter - 4, height: diameter - 4)
+                .shadow(color: Color.black.opacity(0.16 * strength), radius: 15, x: 0, y: 8)
+
+            Circle()
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.52 * strength),
+                            Color.white.opacity(0.16 * strength),
+                            Color.black.opacity(0.10 * strength),
+                            Color.white.opacity(0.28 * strength)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.05
+                )
+                .frame(width: diameter - 2, height: diameter - 2)
+
+            Circle()
+                .fill(Color.primary.opacity(0.018 * strength))
+                .frame(width: centerDiameter, height: centerDiameter)
+
+            Circle()
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.24 * strength),
+                            Color.black.opacity(0.06 * strength)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.9
+                )
+                .frame(width: centerDiameter, height: centerDiameter)
+        }
+        .frame(width: diameter, height: diameter)
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Motion
 
 private struct LiquidContentTransitionModifier: ViewModifier {
@@ -63,26 +199,20 @@ private struct LiquidContentTransitionModifier: ViewModifier {
 }
 
 enum MenuMotion {
-    static let appearResponse: Double = 0.24
-    static let dismissResponse: Double = 0.28
-    static let dismissOrderOutDelay: Double = 0.34
+    static let contentAppearDuration: Double = 0.11
+    static let contentDismissDuration: Double = 0.08
+    static let dismissOrderOutDelay: Double = 0.09
     static let iconFocusResponse: Double = 0.18
     static let centerSwapResponse: Double = 0.16
-
-    static let hiddenScaleX: CGFloat = 0.90
-    static let hiddenScaleY: CGFloat = 0.94
-    static let menuHiddenBlur: CGFloat = 7
-    static let hiddenOpacity: Double = 0.02
 
     static let iconSelectedScale: CGFloat = 1.07
     static let iconSelectedPushRatio: CGFloat = 0.018
     static let selectedDotScale: CGFloat = 1.62
-    static let iconEntryMaxDelay: Double = 0.06
 
     static func menuAnimation(isVisible: Bool) -> Animation {
         isVisible
-            ? .spring(response: appearResponse, dampingFraction: 0.7)
-            : .spring(response: dismissResponse, dampingFraction: 0.95)
+            ? .easeOut(duration: contentAppearDuration)
+            : .easeIn(duration: contentDismissDuration)
     }
 
     static var iconFocusAnimation: Animation {
@@ -114,7 +244,6 @@ struct ArclyWheelView: View {
 
     static let windowSize: CGFloat = 480
 
-    @Namespace private var glassNS
     @State private var wedgeAngle: Double = 90
     @State private var showWedge: Bool = false
 
@@ -132,13 +261,14 @@ struct ArclyWheelView: View {
     private var outerRadius: CGFloat { iconOrbitRadius + ringThickness / 2 }
     private var innerRadius: CGFloat { iconOrbitRadius - ringThickness / 2 }
     private var center: CGFloat { Self.windowSize / 2 }
+    private var wheelDiameter: CGFloat { outerRadius * 2 }
     private var iconSize: CGFloat { appState.settings.iconSize }
     private var menuGlassOpacity: Double {
         min(max(appState.settings.menuOpacity, 0.15), 1.0)
     }
-    private var glassSurfaceFillOpacity: Double {
+    private var glassMaterialIntensity: Double {
         let normalized = (menuGlassOpacity - 0.15) / 0.85
-        return 0.03 + normalized * 0.42
+        return 0.32 + normalized * 0.68
     }
     private var centerLensRadius: CGFloat {
         let maxRadiusBeforeIcons = iconOrbitRadius - iconSize / 2 - 10
@@ -188,52 +318,14 @@ struct ArclyWheelView: View {
 
     var body: some View {
         ZStack {
-            // 1. Glass 圆环
-            GlassEffectContainer {
-                ZStack {
-                    glassSurfaceLayer
+            // The sampled glass is presented at its final geometry. Scaling a live
+            // desktop sampler looks synthetic and can force a cached/live frame swap.
+            nativeGlassSamplingLayer
+            materialOverlayLayers
 
-                    Color.clear
-                        .frame(width: outerRadius * 2, height: outerRadius * 2)
-                        .glassEffect(.regular.interactive(), in: DonutShape(
-                            innerRadius: innerRadius,
-                            outerRadius: outerRadius
-                        ))
-                        .glassEffectID("ring", in: glassNS)
-                        .opacity(menuGlassOpacity)
-
-                    Color.clear
-                        .frame(width: centerLensRadius * 2 + 4, height: centerLensRadius * 2 + 4)
-                        .glassEffect(.regular, in: .circle)
-                        .glassEffectID("center", in: glassNS)
-                        .scaleEffect(appState.selectedIndex != nil ? 1.05 : 1.0)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.5),
-                                   value: appState.selectedIndex != nil)
-                        .opacity(menuGlassOpacity)
-
-                    glassRefractionLayer
-                }
-            }
-
-            // 2. 选中扇形 — tinted glass
-            selectedWedgeLayer
-
-            // 3. 中心内容
-            centerContent
-
-            // 4. 图标
-            iconsLayer
+            animatedWheelLayers
         }
         .frame(width: Self.windowSize, height: Self.windowSize)
-        // 入场/收起只改变运动，不改变已有 glassEffect 材质。
-        .scaleEffect(x: appState.isMenuVisible ? 1.0 : MenuMotion.hiddenScaleX,
-            y: appState.isMenuVisible ? 1.0 : MenuMotion.hiddenScaleY,
-            anchor: .center
-        )
-        .opacity(appState.isMenuVisible ? 1.0 : MenuMotion.hiddenOpacity)
-        .blur(radius: appState.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)
-        .animation(MenuMotion.menuAnimation(isVisible: appState.isMenuVisible),
-                   value: appState.isMenuVisible)
         .onChange(of: appState.selectedIndex) { newIndex in
             handleSelectionChange(newIndex)
         }
@@ -246,47 +338,55 @@ struct ArclyWheelView: View {
         }
     }
 
-    // MARK: - Selection Wedge
-
-    @ViewBuilder
-    private var glassSurfaceLayer: some View {
+    private var animatedWheelLayers: some View {
         ZStack {
-            DonutShape(innerRadius: innerRadius, outerRadius: outerRadius)
-                .fill(Color.white.opacity(glassSurfaceFillOpacity))
-
-            Circle()
-                .fill(Color.white.opacity(glassSurfaceFillOpacity * 0.72))
-                .frame(width: centerLensRadius * 2 + 4, height: centerLensRadius * 2 + 4)
+            selectedWedgeLayer
+            centerContent
+            iconsLayer
         }
-        .frame(width: outerRadius * 2, height: outerRadius * 2)
+        .scaleEffect(appState.isMenuVisible ? 1 : 0.975)
+        .opacity(appState.isMenuVisible ? 1 : 0)
+        .animation(MenuMotion.menuAnimation(isVisible: appState.isMenuVisible),
+                   value: appState.isMenuVisible)
+    }
+
+    private var materialOverlayLayers: some View {
+        ZStack {
+            glassToneMappingLayer
+            glassEdgeHighlightLayer
+        }
+        .compositingGroup()
         .allowsHitTesting(false)
     }
 
+    // MARK: - Selection Wedge
+
     @ViewBuilder
-    private var glassRefractionLayer: some View {
-        ZStack {
-            DonutShape(innerRadius: innerRadius + 1, outerRadius: outerRadius - 1)
-                .stroke(Color.white.opacity(0.24 * menuGlassOpacity), lineWidth: 1.1)
-                .blur(radius: 0.35)
+    private var nativeGlassSamplingLayer: some View {
+        NativeGlassSamplingLayer(
+            cornerRadius: outerRadius,
+            intensity: glassMaterialIntensity
+        )
+            .frame(width: wheelDiameter, height: wheelDiameter)
+            .clipShape(Circle())
+            .allowsHitTesting(false)
+    }
 
-            DonutShape(innerRadius: innerRadius + 7, outerRadius: outerRadius - 7)
-                .stroke(Color.black.opacity(0.045 * menuGlassOpacity), lineWidth: 5.5)
-                .blur(radius: 5)
-                .blendMode(.multiply)
+    @ViewBuilder
+    private var glassToneMappingLayer: some View {
+        ControlCenterGlassToneLayer(
+            diameter: wheelDiameter,
+            intensity: glassMaterialIntensity
+        )
+    }
 
-            Circle()
-                .stroke(Color.white.opacity(0.18 * menuGlassOpacity), lineWidth: 1)
-                .frame(width: centerLensRadius * 2 - 7, height: centerLensRadius * 2 - 7)
-                .blur(radius: 0.35)
-
-            Circle()
-                .stroke(Color.black.opacity(0.04 * menuGlassOpacity), lineWidth: 5)
-                .frame(width: centerLensRadius * 2 - 18, height: centerLensRadius * 2 - 18)
-                .blur(radius: 5)
-                .blendMode(.multiply)
-        }
-        .frame(width: outerRadius * 2, height: outerRadius * 2)
-        .allowsHitTesting(false)
+    @ViewBuilder
+    private var glassEdgeHighlightLayer: some View {
+        ControlCenterGlassEdgeLayer(
+            diameter: wheelDiameter,
+            centerDiameter: centerLensRadius * 2,
+            intensity: glassMaterialIntensity
+        )
     }
 
     @ViewBuilder
@@ -352,17 +452,6 @@ struct ArclyWheelView: View {
                 y: isSelected ? -sin(angle) * pushDist : 0
             )
             .animation(MenuMotion.iconFocusAnimation, value: isSelected)
-            // 入场：级联弹出
-            .scaleEffect(appState.isMenuVisible ? 1.0 : 0.86)
-            .opacity(appState.isMenuVisible ? 1.0 : 0.0)
-            .blur(radius: appState.isMenuVisible ? 0 : 3)
-            .animation(
-                appState.isMenuVisible
-                    ? .spring(response: 0.26, dampingFraction: 0.74)
-                        .delay(min(Double(index) * 0.012, MenuMotion.iconEntryMaxDelay))
-                    : .spring(response: MenuMotion.dismissResponse, dampingFraction: 0.95),
-                value: appState.isMenuVisible
-            )
             .position(x: x, y: y)
         }
     }
@@ -488,21 +577,18 @@ struct ArclyWheelView: View {
 
             Spacer().frame(height: musicVerticalGap)
 
-            // 播放控制（Pro 功能）
-            if appState.pro.canControlMusic {
-                HStack(spacing: musicControlSpacing) {
-                    Image(systemName: "backward.fill")
-                        .font(.system(size: musicSecondaryControlSize))
-                        .foregroundStyle(.secondary)
+            HStack(spacing: musicControlSpacing) {
+                Image(systemName: "backward.fill")
+                    .font(.system(size: musicSecondaryControlSize))
+                    .foregroundStyle(.secondary)
 
-                    Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: musicPrimaryControlSize))
-                        .foregroundStyle(.primary)
+                Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: musicPrimaryControlSize))
+                    .foregroundStyle(.primary)
 
-                    Image(systemName: "forward.fill")
-                        .font(.system(size: musicSecondaryControlSize))
-                        .foregroundStyle(.secondary)
-                }
+                Image(systemName: "forward.fill")
+                    .font(.system(size: musicSecondaryControlSize))
+                    .foregroundStyle(.secondary)
             }
 
             Spacer().frame(height: musicVerticalGap)

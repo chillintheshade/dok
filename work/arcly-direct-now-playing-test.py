@@ -23,7 +23,7 @@ def main() -> None:
         ("private static let helperScript", "external MediaRemote helper script"),
         ("private var refreshProcess: Process?", "tracked helper process"),
         ("Process()", "helper process launch for now-playing refresh"),
-        ('"/usr/bin/swift"', "helper runs in an external Swift process"),
+        ("helperSwiftURL", "helper only uses an installed developer-tool Swift binary"),
         ("readNowPlayingDirect", "in-process MediaRemote refresh path"),
         ("private func completeRefresh", "single completion path for helper refresh"),
         ("activeRefreshID", "stale async refresh protection"),
@@ -45,6 +45,7 @@ def main() -> None:
 
     forbidden = [
         ("if trackName.isEmpty { return }", "media controls blocked by missing displayed title"),
+        ('URL(fileURLWithPath: "/usr/bin/swift")', "system Swift shim can prompt users to install developer tools"),
     ]
 
     for needle, reason in forbidden:

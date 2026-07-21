@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ApplicationServices
 import ServiceManagement
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
@@ -45,7 +46,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 800, height: 420)
+        .frame(width: 920, height: 520)
     }
 
     @ViewBuilder
@@ -72,6 +73,7 @@ private struct SettingsSidebar: View {
                         tab: tab,
                         isSelected: selectedTab == tab
                     ) {
+                        NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
                             selectedTab = tab
                         }
@@ -81,10 +83,10 @@ private struct SettingsSidebar: View {
 
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
-        .frame(width: 150)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+        .frame(width: 172)
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
     }
@@ -114,13 +116,13 @@ private struct SettingsSidebarButton: View {
                 Spacer(minLength: 0)
             }
             .foregroundStyle(isSelected ? .primary : .secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .frame(height: 58)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.13) : Color.clear)
+                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -145,9 +147,7 @@ struct AppsSettingsView: View {
     @State private var dragTargetIndex: Int? = nil
     @State private var isInDeleteZone: Bool = false
 
-    @Namespace private var settingsGlassNS
-
-    private let pieSize: CGFloat = 430
+    private let pieSize: CGFloat = 476
     private var previewMenuRadius: CGFloat { appState.settings.menuRadius }
     private var previewOuterDiameter: CGFloat { (previewMenuRadius + 50) * 2 }
     private var scale: CGFloat {
@@ -158,35 +158,32 @@ struct AppsSettingsView: View {
     private var outerRadius: CGFloat { iconOrbitRadius + ringThickness / 2 }
     private var innerRadius: CGFloat { iconOrbitRadius - ringThickness / 2 }
     private var center: CGFloat { pieSize / 2 }
+    private var wheelDiameter: CGFloat { outerRadius * 2 }
     private var iconSize: CGFloat { appState.settings.iconSize * scale }
     private var menuGlassOpacity: Double {
         min(max(appState.settings.menuOpacity, 0.15), 1.0)
     }
-    private var glassSurfaceFillOpacity: Double {
+    private var glassMaterialIntensity: Double {
         let normalized = (menuGlassOpacity - 0.15) / 0.85
-        return 0.03 + normalized * 0.42
+        return 0.32 + normalized * 0.68
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
+        HStack(alignment: .center, spacing: 12) {
             appsPreviewPane
             appsControlPane
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 12)
         .padding(.vertical, 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .sheet(isPresented: $showingAppPicker) {
             AppPickerView(appState: appState, isPresented: $showingAppPicker)
         }
-        .sheet(isPresented: $showUpgrade) {
-            UpgradeView()
-                .environmentObject(appState)
-        }
     }
 
     // MARK: - 底部按钮
 
-    private var maxSlots: Int { appState.pro.maxSlots }
+    private let maxSlots = AppState.maxSlots
 
     private func addFileOrFolder() {
         guard appState.settings.apps.count < maxSlots else { return }
@@ -218,11 +215,9 @@ struct AppsSettingsView: View {
         }
     }
 
-    @State private var showUpgrade = false
-
     private var appsPreviewPane: some View {
         wheelStage
-            .frame(width: 420, height: 420, alignment: .center)
+            .frame(width: 500, height: 500, alignment: .center)
     }
 
     private var wheelStage: some View {
@@ -249,7 +244,7 @@ struct AppsSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             controlList
         }
-        .frame(width: 184)
+        .frame(width: 208)
     }
 
     private var controlList: some View {
@@ -259,28 +254,19 @@ struct AppsSettingsView: View {
                 subtitle: Loc.string("settings.addApp.subtitle"),
                 icon: "plus.app"
             ) {
-                if appState.settings.apps.count >= maxSlots && !appState.pro.isPro {
-                    showUpgrade = true
-                } else {
-                    showingAppPicker = true
-                }
+                showingAppPicker = true
             }
-            .disabled(appState.settings.apps.count >= maxSlots && appState.pro.isPro)
+            .disabled(appState.settings.apps.count >= maxSlots)
 
             Divider()
                 .padding(.leading, 44)
 
             actionTile(
                 Loc.string("settings.addFolder"),
-                subtitle: appState.pro.canAddFolder ? Loc.string("settings.addFolder.subtitle") : Loc.string("settings.proUnlock"),
-                icon: "folder.badge.plus",
-                badge: appState.pro.isPro ? nil : "PRO"
+                subtitle: Loc.string("settings.addFolder.subtitle"),
+                icon: "folder.badge.plus"
             ) {
-                if !appState.pro.canAddFolder {
-                    showUpgrade = true
-                } else {
-                    addFileOrFolder()
-                }
+                addFileOrFolder()
             }
 
             Divider()
@@ -297,10 +283,10 @@ struct AppsSettingsView: View {
                 }
             }
         }
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.055), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
         }
     }
 
@@ -308,7 +294,6 @@ struct AppsSettingsView: View {
         _ title: String,
         subtitle: String,
         icon: String,
-        badge: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -319,15 +304,8 @@ struct AppsSettingsView: View {
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(title)
-                            .font(.system(size: 13, weight: .semibold))
-                        if let badge {
-                            Text(badge)
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.orange)
-                        }
-                    }
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
                     Text(subtitle)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.tertiary)
@@ -338,9 +316,8 @@ struct AppsSettingsView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(height: 58)
+            .padding(.horizontal, 12)
+            .frame(height: 64)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -351,75 +328,31 @@ struct AppsSettingsView: View {
 
     private var pieRing: some View {
         ZStack {
-            GlassEffectContainer {
-                ZStack {
-                    settingsGlassSurfaceLayer
-
-                    Color.clear
-                        .frame(width: outerRadius * 2, height: outerRadius * 2)
-                        .glassEffect(.regular.interactive(), in: DonutShape(
-                            innerRadius: innerRadius,
-                            outerRadius: outerRadius
-                        ))
-                        .glassEffectID("settingsRing", in: settingsGlassNS)
-                        .opacity(menuGlassOpacity)
-
-                    Color.clear
-                        .frame(width: innerRadius * 2 + 4, height: innerRadius * 2 + 4)
-                        .glassEffect(.regular, in: .circle)
-                        .glassEffectID("settingsCenter", in: settingsGlassNS)
-                        .scaleEffect(selectedIndex != nil ? 1.04 : 1.0)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.5),
-                                   value: selectedIndex != nil)
-                        .opacity(menuGlassOpacity)
-
-                    settingsGlassRefractionLayer
-                }
-            }
-
+            NativeGlassSamplingLayer(cornerRadius: outerRadius, intensity: glassMaterialIntensity)
+                .frame(width: wheelDiameter, height: wheelDiameter)
+                .clipShape(Circle())
+                .allowsHitTesting(false)
+            settingsGlassToneMappingLayer
+            settingsGlassEdgeHighlightLayer
             centerLabel
         }
     }
 
     @ViewBuilder
-    private var settingsGlassSurfaceLayer: some View {
-        ZStack {
-            DonutShape(innerRadius: innerRadius, outerRadius: outerRadius)
-                .fill(Color.white.opacity(glassSurfaceFillOpacity))
-
-            Circle()
-                .fill(Color.white.opacity(glassSurfaceFillOpacity * 0.72))
-                .frame(width: innerRadius * 2 + 4, height: innerRadius * 2 + 4)
-        }
-        .frame(width: outerRadius * 2, height: outerRadius * 2)
-        .allowsHitTesting(false)
+    private var settingsGlassToneMappingLayer: some View {
+        ControlCenterGlassToneLayer(
+            diameter: wheelDiameter,
+            intensity: glassMaterialIntensity
+        )
     }
 
     @ViewBuilder
-    private var settingsGlassRefractionLayer: some View {
-        ZStack {
-            DonutShape(innerRadius: innerRadius + 1, outerRadius: outerRadius - 1)
-                .stroke(Color.white.opacity(0.24 * menuGlassOpacity), lineWidth: 1)
-                .blur(radius: 0.3)
-
-            DonutShape(innerRadius: innerRadius + 7, outerRadius: outerRadius - 7)
-                .stroke(Color.black.opacity(0.045 * menuGlassOpacity), lineWidth: 5)
-                .blur(radius: 4.5)
-                .blendMode(.multiply)
-
-            Circle()
-                .stroke(Color.white.opacity(0.18 * menuGlassOpacity), lineWidth: 1)
-                .frame(width: innerRadius * 2 - 7, height: innerRadius * 2 - 7)
-                .blur(radius: 0.3)
-
-            Circle()
-                .stroke(Color.black.opacity(0.04 * menuGlassOpacity), lineWidth: 4.5)
-                .frame(width: innerRadius * 2 - 18, height: innerRadius * 2 - 18)
-                .blur(radius: 4.5)
-                .blendMode(.multiply)
-        }
-        .frame(width: outerRadius * 2, height: outerRadius * 2)
-        .allowsHitTesting(false)
+    private var settingsGlassEdgeHighlightLayer: some View {
+        ControlCenterGlassEdgeLayer(
+            diameter: wheelDiameter,
+            centerDiameter: innerRadius * 2,
+            intensity: glassMaterialIntensity
+        )
     }
 
     // MARK: - 中心标签
@@ -709,7 +642,7 @@ struct AppPickerView: View {
                                 .foregroundColor(.green)
                         }
                         .buttonStyle(.plain)
-                        .disabled(appState.settings.apps.count >= appState.pro.maxSlots)
+                        .disabled(appState.settings.apps.count >= AppState.maxSlots)
                     }
                 }
                 .padding(.vertical, 2)
@@ -724,7 +657,7 @@ struct AppPickerView: View {
     }
 
     func addApp(_ app: AppItem) {
-        guard appState.settings.apps.count < appState.pro.maxSlots else { return }
+        guard appState.settings.apps.count < AppState.maxSlots else { return }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
             appState.settings.apps.append(app)
             recentlyAdded.insert(app.bundleIdentifier)
@@ -748,54 +681,97 @@ private struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.top, 10)
-                .padding(.bottom, 5)
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
 
             content
         }
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.055), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
         }
+    }
+}
+
+// MARK: - 辅助功能权限提示
+
+/// 鼠标按键触发依赖 CGEvent tap，需要辅助功能权限。
+/// 未授权时不会报错，只是静默不工作，因此在设置里显式提示并提供跳转。
+private struct AccessibilityPermissionRow: View {
+    @State private var isTrusted = AXIsProcessTrusted()
+
+    private let pollTimer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Group {
+            if !isTrusted {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+
+                    Text(Loc.string("permission.accessibility.needed"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 8)
+
+                    Button(Loc.string("permission.accessibility.open")) {
+                        openAccessibilitySettings()
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .transition(.opacity)
+            }
+        }
+        .onReceive(pollTimer) { _ in
+            // 用户可能在 App 运行期间去系统设置授权，这里轮询让提示自动消失。
+            let current = AXIsProcessTrusted()
+            if current != isTrusted {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    isTrusted = current
+                }
+            }
+        }
+    }
+
+    private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
 private struct SettingRow<Accessory: View>: View {
     let title: String
-    var locked: Bool = false
     @ViewBuilder var accessory: Accessory
 
     var body: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                if locked {
-                    Text("PRO")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundColor(.orange)
-                }
-            }
-            .foregroundStyle(locked ? .secondary : .primary)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
 
             Spacer(minLength: 8)
             accessory
                 .controlSize(.small)
         }
-        .padding(.horizontal, 10)
-        .frame(height: 38)
+        .padding(.horizontal, 14)
+        .frame(height: 44)
     }
 }
 
 private struct SettingDivider: View {
     var body: some View {
         Divider()
-            .padding(.leading, 10)
+            .padding(.leading, 14)
     }
 }
 
@@ -804,155 +780,149 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            primaryColumn
-            secondaryColumn
+        VStack(spacing: 12) {
+            triggerGroup
+            wheelGroup
+
+            HStack(alignment: .top, spacing: 12) {
+                playbackGroup
+                feedbackGroup
+                systemGroup
+            }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 0)
+        .frame(width: 700)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .onAppear {
             launchAtLogin = getLaunchAtLogin()
         }
     }
 
-    private var primaryColumn: some View {
-        VStack(spacing: 12) {
-            triggerGroup
-            playbackGroup
-        }
-        .frame(width: 292)
-    }
-
-    private var secondaryColumn: some View {
-        VStack(spacing: 12) {
-            wheelGroup
-            systemGroup
-        }
-        .frame(width: 292)
-    }
-
     private var triggerGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.trigger")) {
-            HotkeyRecorderRow(appState: appState)
+            // 键盘与鼠标是并列的两种唤出方式，并排展示让关系一目了然。
+            HStack(spacing: 0) {
+                HotkeyRecorderRow(appState: appState)
+                    .frame(maxWidth: .infinity)
 
-            SettingDivider()
+                Divider()
+                    .frame(height: 28)
 
-            SettingRow(title: Loc.string("settings.mouse"), locked: !appState.pro.isPro) {
-                Picker("", selection: $appState.settings.mouseTrigger) {
-                    ForEach(MouseTrigger.allCases, id: \.self) { trigger in
-                        Text(trigger.displayName).tag(trigger)
+                inlineSetting(title: Loc.string("settings.mouse")) {
+                    Picker("", selection: $appState.settings.mouseTrigger) {
+                        ForEach(MouseTrigger.allCases, id: \.self) { trigger in
+                            Text(trigger.displayName).tag(trigger)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 126)
+                    .onChange(of: appState.settings.mouseTrigger) { _ in
+                        NotificationCenter.default.post(name: .mouseTriggerChanged, object: nil)
                     }
                 }
-                .labelsHidden()
-                .frame(width: 112)
-                .disabled(!appState.pro.isPro)
-                .onChange(of: appState.settings.mouseTrigger) { _ in
-                    NotificationCenter.default.post(name: .mouseTriggerChanged, object: nil)
-                }
+            }
+            .frame(height: 48)
+
+            // 鼠标触发依赖辅助功能权限，未授权时静默失效，这里显式提示。
+            if appState.settings.mouseTrigger != .none {
+                AccessibilityPermissionRow()
             }
 
             SettingDivider()
 
-            SettingRow(title: Loc.string("settings.mode")) {
+            inlineSetting(title: Loc.string("settings.mode")) {
                 Picker("", selection: $appState.settings.interactionMode) {
                     Text(Loc.string("mode.click")).tag(InteractionMode.click)
                     Text(Loc.string("mode.hold")).tag(InteractionMode.hold)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 112)
+                .frame(width: 126)
             }
+            .frame(height: 44)
         }
     }
 
     private var playbackGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.playback")) {
-            SettingRow(title: Loc.string("settings.nowPlaying")) {
-                Toggle("", isOn: $appState.settings.showMusicControl)
-                    .labelsHidden()
-            }
-
-            SettingDivider()
-
-            SettingRow(title: Loc.string("settings.playbackControls"), locked: !appState.pro.isPro) {
-                Toggle("", isOn: .constant(appState.pro.canControlMusic))
-                    .labelsHidden()
-                    .disabled(!appState.pro.isPro)
-            }
-
-            SettingDivider()
-
-            SettingRow(title: Loc.string("settings.haptics")) {
-                Toggle("", isOn: $appState.settings.hapticFeedback)
-                    .labelsHidden()
-            }
-
-            SettingDivider()
-
-            SettingRow(title: Loc.string("settings.sound")) {
-                Toggle("", isOn: $appState.settings.soundEffects)
-                    .labelsHidden()
-            }
+            toggleCell(title: Loc.string("settings.nowPlaying"), isOn: $appState.settings.showMusicControl)
+                .frame(height: 44)
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var feedbackGroup: some View {
+        SettingsGroup(title: Loc.string("settings.group.feedback")) {
+            toggleCell(title: Loc.string("settings.haptics"), isOn: $appState.settings.hapticFeedback)
+                .frame(height: 44)
+
+            SettingDivider()
+
+            toggleCell(title: Loc.string("settings.sound"), isOn: $appState.settings.soundEffects)
+                .frame(height: 44)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var wheelGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.wheel")) {
-            SettingRow(title: Loc.string("settings.position")) {
-                Picker("", selection: $appState.settings.menuPosition) {
-                    Text(Loc.string("position.mouse")).tag(MenuPosition.followMouse)
-                    Text(Loc.string("position.center")).tag(MenuPosition.screenCenter)
+            HStack(spacing: 0) {
+                inlineSetting(title: Loc.string("settings.position")) {
+                    Picker("", selection: $appState.settings.menuPosition) {
+                        Text(Loc.string("position.mouse")).tag(MenuPosition.followMouse)
+                        Text(Loc.string("position.center")).tag(MenuPosition.screenCenter)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 136)
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 112)
+
+                Divider()
+                    .frame(height: 28)
+
+                inlineSetting(title: Loc.string("settings.theme")) {
+                    Picker("", selection: $appState.settings.appearanceMode) {
+                        Text(Loc.string("theme.system")).tag(AppearanceMode.system)
+                        Text(Loc.string("theme.light")).tag(AppearanceMode.light)
+                        Text(Loc.string("theme.dark")).tag(AppearanceMode.dark)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 154)
+                    .onChange(of: appState.settings.appearanceMode) { _ in
+                        NotificationCenter.default.post(name: .appearanceChanged, object: nil)
+                    }
+                }
             }
+            .frame(height: 48)
 
             SettingDivider()
 
-            SettingRow(title: Loc.string("settings.theme")) {
-                Picker("", selection: $appState.settings.appearanceMode) {
-                    Text(Loc.string("theme.system")).tag(AppearanceMode.system)
-                    Text(Loc.string("theme.light")).tag(AppearanceMode.light)
-                    Text(Loc.string("theme.dark")).tag(AppearanceMode.dark)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 124)
-                .onChange(of: appState.settings.appearanceMode) { _ in
-                    NotificationCenter.default.post(name: .appearanceChanged, object: nil)
-                }
+            HStack(alignment: .top, spacing: 0) {
+                compactSlider(
+                    title: Loc.string("settings.radius"),
+                    value: $appState.settings.menuRadius,
+                    range: 100...180,
+                    step: 10
+                )
+                Divider().frame(height: 48)
+                compactSlider(
+                    title: Loc.string("settings.icon"),
+                    value: $appState.settings.iconSize,
+                    range: 32...64,
+                    step: 4
+                )
+                Divider().frame(height: 48)
+                compactSlider(
+                    title: Loc.string("settings.opacity"),
+                    value: $appState.settings.menuOpacity,
+                    range: 0.15...1.0,
+                    step: 0.05,
+                    percentage: true
+                )
             }
-
-            SettingDivider()
-
-            sliderRow(
-                title: Loc.string("settings.radius"),
-                value: $appState.settings.menuRadius,
-                range: 100...180,
-                step: 10,
-                locked: !appState.pro.isPro
-            )
-
-            SettingDivider()
-
-            sliderRow(
-                title: Loc.string("settings.icon"),
-                value: $appState.settings.iconSize,
-                range: 32...64,
-                step: 4,
-                locked: !appState.pro.isPro
-            )
-
-            SettingDivider()
-
-            opacitySliderRow(
-                title: Loc.string("settings.opacity"),
-                value: $appState.settings.menuOpacity,
-                range: 0.15...1.0,
-                step: 0.05
-            )
+            .frame(height: 68)
         }
     }
 
@@ -976,57 +946,63 @@ struct GeneralSettingsView: View {
                     }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private func sliderRow(
+    private func inlineSetting<Accessory: View>(
+        title: String,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+
+            Spacer(minLength: 8)
+            accessory()
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func toggleCell(
+        title: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func compactSlider(
         title: String,
         value: Binding<Double>,
         range: ClosedRange<Double>,
         step: Double,
-        locked: Bool
+        percentage: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                if locked {
-                    Text("PRO")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundColor(.orange)
-                }
-                Spacer()
-                Text("\(Int(value.wrappedValue))")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(value: value, in: range, step: step)
-                .disabled(locked)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 54)
-    }
-
-    private func opacitySliderRow(
-        title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        step: Double
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 4) {
+            HStack {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
                 Spacer()
-                Text("\(Int(round(value.wrappedValue * 100)))%")
+                Text(percentage ? "\(Int(round(value.wrappedValue * 100)))%" : "\(Int(value.wrappedValue))")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
             Slider(value: value, in: range, step: step)
         }
-        .padding(.horizontal, 10)
-        .frame(height: 54)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
     }
 
     func getLaunchAtLogin() -> Bool {
@@ -1061,35 +1037,56 @@ struct HotkeyRecorderRow: View {
     @State private var globalMonitor: Any?
 
     var body: some View {
-        HStack {
-            Text(Loc.string("settings.hotkey"))
-                .font(.system(size: 12, weight: .medium))
-            Spacer()
-
-            if isRecording {
-                Text(Loc.string("hotkey.recording"))
-                    .font(.system(size: 12))
-                    .foregroundColor(.accentColor)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .glassEffect(.regular, in: .capsule)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-            } else {
-                Button(action: { withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { startRecording() } }) {
-                    HStack(spacing: 2) {
-                        ForEach(modifierSymbols, id: \.self) { sym in
-                            KeyCap(sym)
-                        }
-                        KeyCap(HotkeyConfig.keyCodeToString(appState.settings.hotkey.keyCode))
-                    }
-                }
-                .buttonStyle(.plain)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
+        Button {
+            guard !isRecording else { return }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                startRecording()
             }
+        } label: {
+            HStack(spacing: 10) {
+                Text(Loc.string("settings.hotkey"))
+                    .font(.system(size: 12, weight: .medium))
+
+                Spacer(minLength: 10)
+
+                if isRecording {
+                    Text(Loc.string("hotkey.recording"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.accentColor)
+                        .transition(.opacity)
+                } else {
+                    HStack(spacing: 8) {
+                        Text(Loc.string("settings.changeHotkey"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 2) {
+                            ForEach(modifierSymbols, id: \.self) { sym in
+                                KeyCap(sym)
+                            }
+                            KeyCap(HotkeyConfig.keyCodeToString(appState.settings.hotkey.keyCode))
+                        }
+                    }
+                    .padding(.leading, 10)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 10)
-        .frame(height: 38)
+        .buttonStyle(.plain)
+        .accessibilityLabel(isRecording ? Loc.string("hotkey.recording") : Loc.string("settings.changeHotkey"))
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
+        .onReceive(NotificationCenter.default.publisher(for: .hotkeyRecordingCancelled)) { _ in
+            stopRecording()
+        }
+        .onDisappear {
+            stopRecording()
+        }
     }
 
     private var modifierSymbols: [String] {
@@ -1225,97 +1222,6 @@ extension InteractionMode {
         switch self {
         case .hold: return Loc.string("mode.holdDescription")
         case .click: return Loc.string("mode.clickDescription")
-        }
-    }
-}
-
-// MARK: - 升级 Pro
-
-struct UpgradeView: View {
-    @EnvironmentObject var appState: AppState
-    @Environment(\.dismiss) var dismiss
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Text(Loc.string("upgrade.title"))
-                .font(.system(size: 20, weight: .bold))
-
-            VStack(alignment: .leading, spacing: 12) {
-                featureRow(icon: "square.grid.3x3.fill", text: Loc.string("upgrade.feature.slots"))
-                featureRow(icon: "folder.fill", text: Loc.string("upgrade.feature.folder"))
-                featureRow(icon: "slider.horizontal.3", text: Loc.string("upgrade.feature.size"))
-                featureRow(icon: "play.circle.fill", text: Loc.string("upgrade.feature.music"))
-                featureRow(icon: "computermouse.fill", text: Loc.string("upgrade.feature.mouse"))
-            }
-            .padding(.horizontal, 20)
-
-            switch appState.pro.loadState {
-            case .loaded:
-                if let product = appState.pro.product {
-                    Button(action: {
-                        Task { await appState.pro.purchase() }
-                    }) {
-                        HStack {
-                            if appState.pro.purchaseInProgress {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                            Text(Loc.string("upgrade.buy", product.displayPrice))
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(appState.pro.purchaseInProgress)
-                    .padding(.horizontal, 40)
-                }
-            case .loading:
-                ProgressView(Loc.string("upgrade.loading"))
-            case .failed(let message):
-                VStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 20))
-                    Text(message)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button(Loc.string("upgrade.retry")) {
-                        Task { await appState.pro.loadProduct() }
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.horizontal, 40)
-            }
-
-            Button(Loc.string("upgrade.restore")) {
-                Task { await appState.pro.restore() }
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 12))
-            .foregroundColor(.secondary)
-
-            Button(Loc.string("upgrade.cancel")) { dismiss() }
-                .buttonStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-        }
-        .padding(30)
-        .frame(width: 360)
-        .onChange(of: appState.pro.isPro) { isPro in
-            if isPro { dismiss() }
-        }
-    }
-
-    func featureRow(icon: String, text: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(.orange)
-                .frame(width: 20)
-            Text(text)
-                .font(.system(size: 13))
         }
     }
 }

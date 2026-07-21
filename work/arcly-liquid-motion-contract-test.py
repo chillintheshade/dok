@@ -23,22 +23,18 @@ def main() -> None:
 
     requirements = [
         ("enum MenuMotion", "named motion constants shared by view and window"),
-        ("static let appearResponse: Double = 0.24", "fast liquid appear timing"),
-        ("static let dismissResponse: Double = 0.28", "visible but still quick dismiss timing"),
+        ("static let contentAppearDuration: Double = 0.11", "crisp content-only appear timing"),
+        ("static let contentDismissDuration: Double = 0.08", "crisp content-only dismiss timing"),
+        ("static let dismissOrderOutDelay: Double = 0.09", "short window occupancy after dismissal"),
         ("static let iconFocusResponse: Double = 0.18", "icon focus timing"),
         ("static let centerSwapResponse: Double = 0.16", "center content swap timing"),
         ("static var wedgeSelectionAnimation: Animation", "fast plain selected wedge movement"),
-        ("static let hiddenScaleX: CGFloat = 0.90", "visible horizontal dismiss compression"),
-        ("static let hiddenScaleY: CGFloat = 0.94", "visible vertical dismiss compression"),
-        ("static let menuHiddenBlur: CGFloat = 7", "visible soft dismiss blur"),
-        ("static let hiddenOpacity: Double = 0.02", "non-abrupt fade target"),
         ("static let iconSelectedScale: CGFloat = 1.07", "restrained selected icon scale"),
         ("static let iconSelectedPushRatio: CGFloat = 0.018", "radial icon float ratio"),
         ("static let selectedDotScale: CGFloat = 1.62", "selected running dot breath"),
-        ("MenuMotion.menuAnimation(isVisible: appState.isMenuVisible)", "menu visibility animation"),
-        (".scaleEffect(x: appState.isMenuVisible ? 1.0 : MenuMotion.hiddenScaleX", "liquid x/y menu scale"),
-        (".opacity(appState.isMenuVisible ? 1.0 : MenuMotion.hiddenOpacity)", "menu opacity transition"),
-        (".blur(radius: appState.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)", "menu blur transition"),
+        ("private var materialOverlayLayers", "material overlays remain a stable surface"),
+        (".scaleEffect(appState.isMenuVisible ? 1 : 0.975)", "restrained content-only entry scale"),
+        (".opacity(appState.isMenuVisible ? 1 : 0)", "content-only opacity transition"),
         ("let pushDist = iconOrbitRadius * MenuMotion.iconSelectedPushRatio", "radius-aware selected icon push"),
         (".scaleEffect(isSelected ? MenuMotion.iconSelectedScale : 1.0)", "selected icon focus scale"),
         (".scaleEffect(isSelected ? MenuMotion.selectedDotScale : 1.0)", "selected dot breathing"),
@@ -74,7 +70,7 @@ def main() -> None:
 
     window_requirements = [
         ("self.appState.isMenuVisible = false", "hidden initial visible state before showing window"),
-        ("self.makeKeyAndOrderFront(nil)", "window presentation before appear animation"),
+        ("self.orderFrontRegardless()", "desktop-Space-safe window presentation"),
         ("DispatchQueue.main.async", "deferred appear animation trigger"),
         ("withAnimation(MenuMotion.menuAnimation(isVisible: true))", "animated visible-state flip"),
         ("self.appState.isMenuVisible = true", "visible state set after presentation"),
@@ -88,6 +84,9 @@ def main() -> None:
         require(window_source, needle, reason)
 
     forbid(source, ".id(centerContentIdentity)", "center content forced rebuild")
+    forbid(source, "revealMask", "synthetic expanding glass animation")
+    forbid(source, ".delay(min(Double(index)", "staggered icon entry that makes the wheel feel assembled")
+    forbid(source, ".blur(radius: appState.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)", "whole-wheel blur that changes material brightness")
     forbid(source, "LiquidSelectionShape", "rejected liquid selection animation")
     forbid(source, "LiquidMeniscusShape", "rejected target-side liquid meniscus")
     forbid(source, "wedgeLeadingPull", "rejected leading-pull liquid state")

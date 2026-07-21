@@ -107,9 +107,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let m = mouseDownMonitor { NSEvent.removeMonitor(m); mouseDownMonitor = nil }
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m); mouseUpMonitor = nil }
 
-        let isPro = MainActor.assumeIsolated { appState.pro.isPro }
-        guard isPro,
-              appState.settings.mouseTrigger.buttonNumber != nil else { return }
+        guard appState.settings.mouseTrigger.buttonNumber != nil else { return }
 
         if installMouseEventTap() {
             return
@@ -472,25 +470,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func showArcly() {
-        // 清理旧窗口，先置空 onDismiss 防止延迟回调覆盖新窗口
-        if let old = wheelWindow {
-            old.onDismiss = nil
-            old.dismiss()
+        let window: ArclyWheelWindow
+        if let existing = wheelWindow {
+            window = existing
+        } else {
+            let created = ArclyWheelWindow(appState: appState)
+            created.onDismiss = { [weak self] in
+                self?.isMenuOpen = false
+            }
+            created.onOpenSettings = { [weak self] in
+                self?.openSettings()
+            }
+            wheelWindow = created
+            window = created
         }
-        wheelWindow = nil
-        isMenuOpen = false
 
-        let window = ArclyWheelWindow(appState: appState)
-        window.onDismiss = { [weak self, weak window] in
-            // 仅当仍是当前窗口时才清理
-            guard let self = self, self.wheelWindow === window else { return }
-            self.wheelWindow = nil
-            self.isMenuOpen = false
-        }
-        window.onOpenSettings = { [weak self] in
-            self?.openSettings()
-        }
-        wheelWindow = window
         let mouseLocation = NSEvent.mouseLocation
         appState.nowPlaying.refreshForMenuPresentation()
         window.showAt(point: mouseLocation)
@@ -500,8 +494,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func closeArcly() {
         guard let window = wheelWindow else { return }
-        window.onDismiss = nil
-        wheelWindow = nil
         isMenuOpen = false
         window.dismiss()
     }
@@ -523,7 +515,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let window = NSWindow(contentViewController: hostingController)
             window.title = Loc.string("settings.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable]
-            window.setContentSize(NSSize(width: 800, height: 420))
+            window.setContentSize(NSSize(width: 920, height: 520))
             window.center()
             window.delegate = self
             self.settingsWindow = window

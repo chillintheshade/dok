@@ -38,6 +38,8 @@ class ArclyWheelWindow: NSWindow {
     private var rightClickMonitor: Any?
     private var localRightClickMonitor: Any?
     private var escMonitor: Any?
+    private var revealWorkItem: DispatchWorkItem?
+    private var dismissWorkItem: DispatchWorkItem?
     var onDismiss: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
@@ -90,7 +92,7 @@ class ArclyWheelWindow: NSWindow {
         self.hasShadow = false
         self.ignoresMouseEvents = false
         self.isReleasedWhenClosed = false
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         self.acceptsMouseMovedEvents = true
 
         let menuView = ArclyWheelView(appState: appState, onAppSelected: { [weak self] app in
@@ -108,6 +110,12 @@ class ArclyWheelWindow: NSWindow {
     }
 
     func showAt(point: NSPoint) {
+        revealWorkItem?.cancel()
+        revealWorkItem = nil
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        let wasAlreadyPresented = isVisible && appState.isMenuVisible && alphaValue > 0.99
+
         let anchor: NSPoint
         if appState.settings.menuPosition == .screenCenter,
            let screen = NSScreen.main {
@@ -128,14 +136,39 @@ class ArclyWheelWindow: NSWindow {
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
         self.appState.selectedIndex = nil
+
+        guard !wasAlreadyPresented else {
+            self.alphaValue = 1
+            self.ignoresMouseEvents = false
+            installEventMonitors()
+            return
+        }
+
         self.appState.isMenuVisible = false
-        self.makeKeyAndOrderFront(nil)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        self.ignoresMouseEvents = true
+        self.alphaValue = 1
+        // Do not depend on app activation. This keeps presentation working after
+        // clicking the wallpaper or entering the desktop-only Space.
+        self.orderFrontRegardless()
+
+        self.contentView?.layoutSubtreeIfNeeded()
+        self.displayIfNeeded()
+        let reveal = DispatchWorkItem { [weak self] in
+            guard let self else { return }
             withAnimation(MenuMotion.menuAnimation(isVisible: true)) {
                 self.appState.isMenuVisible = true
             }
+            self.ignoresMouseEvents = false
+            self.revealWorkItem = nil
         }
+        revealWorkItem = reveal
+        DispatchQueue.main.async(execute: reveal)
+
+        installEventMonitors()
+    }
+
+    private func installEventMonitors() {
+        removeMonitors()
 
         // Mouse movement - global
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]) { [weak self] event in
@@ -382,7 +415,7 @@ class ArclyWheelWindow: NSWindow {
                 return .openSettings
             }
 
-            if appState.pro.canControlMusic && dy >= -58 * scale && dy <= -16 * scale {
+            if dy >= -58 * scale && dy <= -16 * scale {
                 if dx < -24 * scale { return .previousTrack }
                 if dx > 24 * scale { return .nextTrack }
                 return .togglePlayPause
@@ -425,25 +458,44 @@ class ArclyWheelWindow: NSWindow {
     }
 
     func dismiss() {
+        revealWorkItem?.cancel()
+        revealWorkItem = nil
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
         appState.selectedIndex = nil
         removeMonitors()
+        ignoresMouseEvents = true
 
-        // 触发关闭动画
         withAnimation(MenuMotion.menuAnimation(isVisible: false)) {
             appState.isMenuVisible = false
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + MenuMotion.dismissOrderOutDelay) { [weak self] in
-            self?.orderOut(nil)
-            self?.onDismiss?()
+
+        let finishDismiss = DispatchWorkItem { [weak self] in
+            guard let self, !self.appState.isMenuVisible else { return }
+            self.orderOut(nil)
+            self.alphaValue = 1
+            self.onDismiss?()
+            self.dismissWorkItem = nil
         }
+        dismissWorkItem = finishDismiss
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + MenuMotion.dismissOrderOutDelay,
+            execute: finishDismiss
+        )
     }
 
     /// 立即关闭（无动画），然后打开设置 — 确保设置窗口能拿到焦点
     func dismissForSettings() {
+        revealWorkItem?.cancel()
+        revealWorkItem = nil
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
         let openSettings = onOpenSettings // 先捕获，防止 onDismiss 释放 self 后丢失
         appState.selectedIndex = nil
         appState.isMenuVisible = false
         removeMonitors()
+        ignoresMouseEvents = true
+        alphaValue = 1
         orderOut(nil)
         onDismiss?()
         DispatchQueue.main.async {

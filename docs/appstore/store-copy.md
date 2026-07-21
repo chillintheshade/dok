@@ -1,5 +1,7 @@
 # Arcly — App Store Connect 文案
 
+> **状态：免费版提交草案（2026-07-21）。** Arcly 只有一套完整功能，不包含付费分层或应用内购买。当前源码的音乐信息依赖私有 MediaRemote API；创建不含该代码的 App Store target 并验证后才能提交本页。
+
 ## 副标题 (30 字内)
 优雅的 Mac 环形启动器
 
@@ -39,18 +41,15 @@ Arcly 是一款极简而优雅的 macOS 环形启动器。按下快捷键，你�
 • 完全本地 — 不联网、不收集数据、不需要账号
 
 ━━━━━━━━━━━━━━━━
-Arcly Pro（一次性买断，永久解锁）
+完整功能，全部免费
 ━━━━━━━━━━━━━━━━
 
-免费版提供 6 个应用槽位和核心功能，升级 Pro 即可解锁：
-
-• 应用槽位扩展至 12 个
-• 文件夹快捷方式
+• 最多 12 个轮盘槽位
+• 应用、文件和文件夹快捷方式
 • 自定义外观（大小、半径、位置）
-• 音乐播放控制（播放 / 暂停 / 上一首 / 下一首）
-• 未来所有 Pro 功能更新
+• 鼠标按键与键盘快捷键唤出
 
-一次购买，永久拥有。
+无需账号，没有订阅，也没有应用内购买。
 
 ━━━━━━━━━━━━━━━━
 为谁而做
@@ -77,7 +76,7 @@ Arcly 1.0 首次发布。
 • 环形启动菜单
 • 全局快捷键呼出
 • 开机自启
-• Arcly Pro 内购解锁高级功能
+• 12 个轮盘槽位与完整自定义功能
 
 感谢你成为第一批 Arcly 用户。
 
@@ -100,12 +99,8 @@ https://<你的 github 用户名>.github.io/arcly/
 
 ## 审核备注 (给苹果审核员看)
 
-Arcly is a macOS pie-menu launcher. No account is required to test the app.
+Arcly is a macOS radial launcher. No account is required to test the app.
 
-To test Arcly Pro in-app purchase:
-1. Launch Arcly from /Applications
-2. Click the Arcly icon in the menu bar
-3. Open Settings → Upgrade to Pro
-4. Use the sandbox tester account to complete the purchase
+All features are included for free. The app has no paid tier, subscription, or in-app purchase.
 
 The app runs entirely offline and does not collect any user data.

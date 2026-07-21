@@ -1,5 +1,7 @@
 # Liquid Menu Motion Implementation Plan
 
+> **Status: archived on 2026-07-20.** This plan records an earlier motion direction and must not be executed as a current checklist. The current wheel reuses one persistent window and uses the source-contract tests in `work/` as its active regression boundary.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add approved liquid-feel appear, dismiss, and icon-focus motion to Arcly while preserving the current glass material.

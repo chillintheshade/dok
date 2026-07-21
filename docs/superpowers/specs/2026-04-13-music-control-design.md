@@ -1,5 +1,7 @@
 # Center Music Controller Design
 
+> **Status: historical design record (2026-07-20).** The implemented refresh, stale-retention, scaling, and settings behavior has evolved beyond this document. Use `NowPlayingService.swift`, `ArclyWheelView.swift`, and the Now Playing contract tests as the current source of truth.
+
 ## Overview
 
 Add a mini music controller to the Arcly center area. When system media is playing, the center circle shows album art, track name, and playback controls instead of the gear icon. Does not occupy any app slot.

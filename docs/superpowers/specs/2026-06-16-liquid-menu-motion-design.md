@@ -1,5 +1,7 @@
 # Liquid Menu Motion Design
 
+> **Status: historical design record (2026-07-20).** The current material and presentation behavior is defined by `ArclyWheelView.swift`, `ArclyWheelWindow.swift`, and the glass/motion contract tests. This document remains only as design history.
+
 ## Goal
 
 Add liquid-feel motion to Arcly without changing the current liquid-glass material.

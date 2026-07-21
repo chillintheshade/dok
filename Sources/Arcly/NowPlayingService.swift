@@ -36,6 +36,16 @@ class NowPlayingService: ObservableObject {
         "com.colliderli.iina",
     ]
 
+    private static let helperSwiftURL: URL? = {
+        let candidates = [
+            "/Library/Developer/CommandLineTools/usr/bin/swift",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift",
+        ]
+        return candidates.first(where: FileManager.default.isExecutableFile(atPath:)).map {
+            URL(fileURLWithPath: $0)
+        }
+    }()
+
     private var runningMusicApp: NSRunningApplication? {
         let running = NSWorkspace.shared.runningApplications
         let musicApps = running.filter { app in
@@ -351,7 +361,8 @@ class NowPlayingService: ObservableObject {
     }
 
     private func startHelperRefresh(expectedBID: String?, refreshID: Int) {
-        guard let helperScriptURL = Self.helperScriptURL else {
+        guard let swiftURL = Self.helperSwiftURL,
+              let helperScriptURL = Self.helperScriptURL else {
             completeRefresh(nil, expectedBID: expectedBID, refreshID: refreshID)
             return
         }
@@ -365,7 +376,7 @@ class NowPlayingService: ObservableObject {
         let proc = Process()
         let output = Pipe()
         let outputBuffer = HelperOutputBuffer()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
+        proc.executableURL = swiftURL
         proc.arguments = [helperScriptURL.path]
         proc.standardOutput = output
         proc.standardError = FileHandle.nullDevice

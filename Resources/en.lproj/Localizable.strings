@@ -29,7 +29,6 @@
 "settings.addApp.subtitle" = "Choose from Applications";
 "settings.addFolder" = "Add Folder";
 "settings.addFolder.subtitle" = "Files and folders";
-"settings.proUnlock" = "Pro unlocks this";
 "settings.restoreDefaults" = "Restore Defaults";
 "settings.restoreDefaults.subtitle" = "Bring back common system items";
 
@@ -46,13 +45,14 @@
 
 "settings.group.trigger" = "Trigger";
 "settings.group.playback" = "Playback";
+"settings.group.feedback" = "Feedback";
 "settings.group.wheel" = "Wheel";
 "settings.group.system" = "System";
-"settings.hotkey" = "Shortcut";
+"settings.hotkey" = "Keyboard";
+"settings.changeHotkey" = "Change";
 "settings.mouse" = "Mouse";
 "settings.mode" = "Mode";
 "settings.nowPlaying" = "Now Playing";
-"settings.playbackControls" = "Playback Controls";
 "settings.haptics" = "Haptics";
 "settings.sound" = "Sound";
 "settings.position" = "Position";
@@ -63,6 +63,8 @@
 "settings.launchAtLogin" = "Launch at Login";
 "settings.menuBar" = "Menu Bar";
 
+"permission.accessibility.needed" = "Mouse trigger needs Accessibility access";
+"permission.accessibility.open" = "Open Settings";
 "trigger.none" = "None";
 "trigger.middleButton" = "Middle Button";
 "trigger.sideButton1" = "Side Button 1 (Forward)";
@@ -79,17 +81,3 @@
 "hotkey.recording" = "Press a new shortcut...";
 
 "music.placeholder" = "Music";
-
-"upgrade.title" = "Upgrade to Pro";
-"upgrade.feature.slots" = "12 wheel slots (6 in free version)";
-"upgrade.feature.folder" = "Add folders to the wheel";
-"upgrade.feature.size" = "Customize wheel and icon size";
-"upgrade.feature.music" = "Music playback controls";
-"upgrade.feature.mouse" = "Mouse-button quick trigger";
-"upgrade.buy" = "Buy Pro — %@";
-"upgrade.loading" = "Loading...";
-"upgrade.retry" = "Retry";
-"upgrade.restore" = "Restore Purchase";
-"upgrade.cancel" = "Cancel";
-"pro.productUnavailable" = "Product is temporarily unavailable. Please try again later.";
-"pro.loadingTimeout" = "Loading timed out. Check your network and try again.";

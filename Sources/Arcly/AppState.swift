@@ -7,6 +7,7 @@ extension Notification.Name {
     static let appearanceChanged = Notification.Name("Arcly.appearanceChanged")
     static let menuBarIconChanged = Notification.Name("Arcly.menuBarIconChanged")
     static let mouseTriggerChanged = Notification.Name("Arcly.mouseTriggerChanged")
+    static let hotkeyRecordingCancelled = Notification.Name("Arcly.hotkeyRecordingCancelled")
 }
 
 // MARK: - Data Models
@@ -526,13 +527,14 @@ final class IconCache {
 // MARK: - App State
 
 class AppState: ObservableObject {
+    static let maxSlots = 12
+
     @Published var settings: AppSettings {
         didSet { saveSettings() }
     }
     @Published var selectedIndex: Int? = nil
     @Published var isMenuVisible: Bool = false
     let nowPlaying = NowPlayingService()
-    let pro = ProManager.shared
 
     private let settingsURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!

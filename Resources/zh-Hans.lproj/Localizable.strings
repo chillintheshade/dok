@@ -29,7 +29,6 @@
 "settings.addApp.subtitle" = "从应用程序选择";
 "settings.addFolder" = "添加文件夹";
 "settings.addFolder.subtitle" = "文件或文件夹都可以";
-"settings.proUnlock" = "Pro 解锁";
 "settings.restoreDefaults" = "恢复默认";
 "settings.restoreDefaults.subtitle" = "重新放回系统常用项";
 
@@ -46,13 +45,14 @@
 
 "settings.group.trigger" = "唤出";
 "settings.group.playback" = "播放";
+"settings.group.feedback" = "反馈";
 "settings.group.wheel" = "轮盘";
 "settings.group.system" = "系统";
-"settings.hotkey" = "快捷键";
+"settings.hotkey" = "键盘";
+"settings.changeHotkey" = "更改";
 "settings.mouse" = "鼠标";
 "settings.mode" = "模式";
 "settings.nowPlaying" = "正在播放";
-"settings.playbackControls" = "播放控制";
 "settings.haptics" = "触控反馈";
 "settings.sound" = "音效";
 "settings.position" = "位置";
@@ -63,6 +63,8 @@
 "settings.launchAtLogin" = "开机启动";
 "settings.menuBar" = "菜单栏";
 
+"permission.accessibility.needed" = "鼠标触发需要辅助功能权限";
+"permission.accessibility.open" = "去授权";
 "trigger.none" = "无";
 "trigger.middleButton" = "鼠标中键";
 "trigger.sideButton1" = "侧键1（前进）";
@@ -79,17 +81,3 @@
 "hotkey.recording" = "按下新快捷键…";
 
 "music.placeholder" = "音乐";
-
-"upgrade.title" = "升级到 Pro";
-"upgrade.feature.slots" = "12 个应用槽位（免费版 6 个）";
-"upgrade.feature.folder" = "添加文件夹到轮盘";
-"upgrade.feature.size" = "自定义菜单大小和图标大小";
-"upgrade.feature.music" = "音乐播放控制";
-"upgrade.feature.mouse" = "鼠标按键快捷触发";
-"upgrade.buy" = "购买 Pro — %@";
-"upgrade.loading" = "加载中...";
-"upgrade.retry" = "重试";
-"upgrade.restore" = "恢复购买";
-"upgrade.cancel" = "取消";
-"pro.productUnavailable" = "商品暂时不可用，请稍后重试";
-"pro.loadingTimeout" = "加载超时，请检查网络后重试";

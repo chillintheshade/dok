@@ -14,7 +14,6 @@
 		62685DCCE0319F160908360D /* NowPlayingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB50646A3799BBF8742A9035 /* NowPlayingService.swift */; };
 		692EC51280400B6C71C695B5 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 5D31D4D6A1F81AF4D7C3CEF1 /* Localizable.strings */; };
 		82ADD7685570705B5324D884 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0209F6453CA4A9038EC2756D /* Localization.swift */; };
-		A55BEB013261E50F5018A484 /* ProManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF00731CD15B91E007634C44 /* ProManager.swift */; };
 		BB786583CF28C88E39FD64AD /* ArclyWheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CCC58C5166E5E21FD3F7370 /* ArclyWheelView.swift */; };
 		D550002352C14DEDD05F683D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2509BA34D2DF2BF7165A7218 /* Assets.xcassets */; };
 		F411CE2C74630226A3DB6820 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C26FE4FEFD4D226D62582EBF /* Localizable.strings */; };
@@ -31,7 +30,6 @@
 		7EAB55BC049D80C232C24E55 /* Arcly.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Arcly.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C26FE4FEFD4D226D62582EBF /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; path = Localizable.strings; sourceTree = "<group>"; };
 		DB50646A3799BBF8742A9035 /* NowPlayingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingService.swift; sourceTree = "<group>"; };
-		DF00731CD15B91E007634C44 /* ProManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProManager.swift; sourceTree = "<group>"; };
 		F178F459E700420FF442E67C /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -62,7 +60,6 @@
 				6646241D8B0C2809F35B24B1 /* ArclyWheelWindow.swift */,
 				0209F6453CA4A9038EC2756D /* Localization.swift */,
 				DB50646A3799BBF8742A9035 /* NowPlayingService.swift */,
-				DF00731CD15B91E007634C44 /* ProManager.swift */,
 				38B1F7055A4E3824231BF5F2 /* SettingsView.swift */,
 			);
 			name = Arcly;
@@ -176,7 +173,6 @@
 				06174937063A76E2E7B94AEC /* ArclyWheelWindow.swift in Sources */,
 				82ADD7685570705B5324D884 /* Localization.swift in Sources */,
 				62685DCCE0319F160908360D /* NowPlayingService.swift in Sources */,
-				A55BEB013261E50F5018A484 /* ProManager.swift in Sources */,
 				2F264C1A060775E6FCC16E11 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
