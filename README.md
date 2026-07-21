@@ -30,12 +30,8 @@ Arcly 当前需要 macOS 26.0 或更高版本。
 
 ## Preview / 预览
 
-These preview images predate the latest uncommitted wheel and settings refinements.
-
-以下预览图早于当前尚未提交的轮盘与设置界面调整。
-
 <p align="center">
-  <img src="docs/github/arcly-wheel-music.png" width="620" alt="Arcly command wheel with music controls">
+  <img src="docs/github/arcly-wheel-music.png" width="460" alt="Arcly command wheel with music controls">
 </p>
 
 <p align="center">
