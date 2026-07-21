@@ -4,6 +4,14 @@ import IOKit.hidsystem
 
 // MARK: - Now Playing Service
 
+/// 读取系统「正在播放」信息。
+///
+/// macOS 只向 Apple 签名的进程开放 MediaRemote 元数据，因此本机进程内直读通常拿不到数据。
+/// 兜底方案是把一段脚本交给 Swift 工具链（Apple 签名）执行，借它的身份读取。
+///
+/// 该 helper 是**常驻**的：启动一次后注册 MediaRemote 通知并低成本轮询，
+/// 有变化就往 stdout 推一行 JSON。这样切歌是事件驱动的即时更新，
+/// 而不是每次刷新都重新启动解释器（那样每次要付 1～3 秒的编译开销）。
 class NowPlayingService: ObservableObject {
     @Published var trackName: String = ""
     @Published var artistName: String = ""
@@ -11,18 +19,17 @@ class NowPlayingService: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var hasNowPlaying: Bool = false
 
-    private var pollTimer: Timer?
     private var isObserving = false
-    private var notificationObservers: [Any] = []
-    private var refreshInFlight = false
-    private var refreshQueuedAfterInFlight = false
-    private var activeRefreshID = 0
-    private var refreshProcess: Process?
-    private let refreshTimeout: TimeInterval = 3.2
-    private var emptyRefreshCount = 0
-    private let maxEmptyRefreshesBeforeClear = 4
-    /// 发送播放命令后短暂冻结，防止文件旧状态覆盖乐观更新
+    private var helperProcess: Process?
+    private var helperRestartWorkItem: DispatchWorkItem?
+    private let helperBuffer = LineBuffer()
+    private var upkeepTimer: Timer?
+    private var pendingClearWorkItem: DispatchWorkItem?
+
+    /// 发送播放命令后短暂冻结，防止旧状态覆盖乐观更新
     private var playingFrozenUntil: Date = .distantPast
+    /// 元数据短暂读空时不立刻清空，避免切歌瞬间闪烁
+    private let staleClearDelay: TimeInterval = 2.5
 
     // MARK: - 音乐 App 配置
 
@@ -35,16 +42,6 @@ class NowPlayingService: ObservableObject {
         "com.apple.QuickTimePlayerX",
         "com.colliderli.iina",
     ]
-
-    private static let helperSwiftURL: URL? = {
-        let candidates = [
-            "/Library/Developer/CommandLineTools/usr/bin/swift",
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift",
-        ]
-        return candidates.first(where: FileManager.default.isExecutableFile(atPath:)).map {
-            URL(fileURLWithPath: $0)
-        }
-    }()
 
     private var runningMusicApp: NSRunningApplication? {
         let running = NSWorkspace.shared.runningApplications
@@ -71,164 +68,17 @@ class NowPlayingService: ObservableObject {
         mrRegistered = true
     }
 
-    private static func sendCommandDirect(_ cmd: UInt32) -> Bool {
-        guard let h = mrHandle,
-              let sym = dlsym(h, "MRMediaRemoteSendCommand") else { return false }
-        ensureMRRegistered()
-        typealias S = @convention(c) (UInt32, UnsafeRawPointer?) -> Bool
-        return unsafeBitCast(sym, to: S.self)(cmd, nil)
-    }
-
-    // MARK: - 生命周期
-
-    func startObserving() {
-        guard !isObserving else { return }
-        isObserving = true
-        Self.ensureMRRegistered()
-
-        // 监听 MediaRemote 通知 → 立即刷新播放状态
-        let nc = NotificationCenter.default
-        let names = [
-            "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationDidChangeNotification",
+    /// Swift 工具链路径。只认真实存在的安装，不碰 `/usr/bin/swift`
+    /// —— 那是个 shim，未安装命令行工具时调用会弹出系统安装对话框。
+    private static let helperSwiftURL: URL? = {
+        let candidates = [
+            "/Library/Developer/CommandLineTools/usr/bin/swift",
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift",
         ]
-        for name in names {
-            let obs1 = nc.addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
-                self?.refreshNowPlaying()
-            }
-            notificationObservers.append(obs1)
-
-            let obs2 = DistributedNotificationCenter.default().addObserver(
-                forName: Notification.Name(name), object: nil, queue: .main
-            ) { [weak self] _ in
-                self?.refreshNowPlaying()
-            }
-            notificationObservers.append(obs2)
+        return candidates.first(where: FileManager.default.isExecutableFile(atPath:)).map {
+            URL(fileURLWithPath: $0)
         }
-
-        // 兜底轮询：部分播放器不稳定发送 MediaRemote 通知
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.refreshNowPlaying()
-        }
-
-        refreshNowPlaying()
-    }
-
-    func stopObserving() {
-        isObserving = false
-        pollTimer?.invalidate()
-        pollTimer = nil
-
-        // Bug fix: 移除所有通知观察者，防止 start/stop 循环后回调累积
-        for observer in notificationObservers {
-            NotificationCenter.default.removeObserver(observer)
-            DistributedNotificationCenter.default().removeObserver(observer)
-        }
-        notificationObservers.removeAll()
-    }
-
-    // MARK: - 媒体控制
-
-    func togglePlayPause() {
-        sendMediaCommand(2, keyType: NX_KEYTYPE_PLAY)
-        isPlaying.toggle()
-        playingFrozenUntil = Date().addingTimeInterval(1.5)
-        refreshAfterMediaCommand()
-    }
-
-    func nextTrack() {
-        sendMediaCommand(4, keyType: NX_KEYTYPE_NEXT)
-        playingFrozenUntil = Date().addingTimeInterval(1.5)
-        refreshAfterMediaCommand()
-    }
-
-    func previousTrack() {
-        sendMediaCommand(5, keyType: NX_KEYTYPE_PREVIOUS)
-        playingFrozenUntil = Date().addingTimeInterval(1.5)
-        refreshAfterMediaCommand()
-    }
-
-    private func sendMediaCommand(_ command: UInt32, keyType: Int32) {
-        _ = command
-        postSystemMediaKey(keyType)
-    }
-
-    private func postSystemMediaKey(_ keyType: Int32) {
-        let flags = NSEvent.ModifierFlags(rawValue: 0xA00)
-        let keyDownData = (Int(keyType) << 16) | (0xA << 8)
-        let keyUpData = (Int(keyType) << 16) | (0xB << 8)
-        let keyDown = NSEvent.otherEvent(
-            with: .systemDefined,
-            location: .zero,
-            modifierFlags: flags,
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            subtype: 8,
-            data1: keyDownData,
-            data2: -1
-        )
-        let keyUp = NSEvent.otherEvent(
-            with: .systemDefined,
-            location: .zero,
-            modifierFlags: flags,
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            subtype: 8,
-            data1: keyUpData,
-            data2: -1
-        )
-        keyDown?.cgEvent?.post(tap: .cghidEventTap)
-        keyUp?.cgEvent?.post(tap: .cghidEventTap)
-    }
-
-    private func refreshAfterMediaCommand() {
-        for delay in [0.35, 0.9, 1.7, 3.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.refreshNowPlaying()
-            }
-        }
-    }
-
-    func refreshForMenuPresentation() {
-        refreshNowPlaying()
-
-        for delay in [0.2, 0.7, 1.4] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.refreshNowPlaying()
-            }
-        }
-    }
-
-    // MARK: - 读取当前播放
-
-    private struct NowPlayingSnapshot {
-        let pid: Int32
-        let title: String
-        let artist: String
-        let playing: Bool
-        let artworkData: Data?
-    }
-
-    private final class HelperOutputBuffer {
-        private let lock = NSLock()
-        private var data = Data()
-
-        func append(_ chunk: Data) {
-            guard !chunk.isEmpty else { return }
-            lock.lock()
-            data.append(chunk)
-            lock.unlock()
-        }
-
-        func snapshot() -> Data {
-            lock.lock()
-            defer { lock.unlock() }
-            return data
-        }
-    }
+    }()
 
     private static let helperScriptURL: URL? = {
         guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -236,11 +86,13 @@ class NowPlayingService: ObservableObject {
             return nil
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("mr_info.swift")
+        return dir.appendingPathComponent("mr_watch.swift")
     }()
 
+    /// 常驻 helper 脚本。与 `Sources/Helper/mr_info.swift` 保持一致。
     private static let helperScript = """
     import Foundation
+
     let h = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_LAZY)!
     typealias GetInfo = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
     typealias GetPlaying = @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
@@ -250,36 +102,256 @@ class NowPlayingService: ObservableObject {
     let getPlaying = unsafeBitCast(dlsym(h, "MRMediaRemoteGetNowPlayingApplicationIsPlaying"), to: GetPlaying.self)
     let register = unsafeBitCast(dlsym(h, "MRMediaRemoteRegisterForNowPlayingNotifications"), to: Register.self)
     let getPID = unsafeBitCast(dlsym(h, "MRMediaRemoteGetNowPlayingApplicationPID"), to: GetPID.self)
+
     register(.main)
-    getPID(.main) { pid in
-        getPlaying(.main) { playing in
-            getInfo(.main) { info in
-                var output: [String: Any] = ["playing": playing, "pid": pid]
-                output["title"] = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
-                output["artist"] = info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
-                if let data = info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data {
-                    output["artwork"] = data.base64EncodedString()
+
+    // 只在内容真正变化时才输出，避免每秒重复编码封面。
+    // 封面必须参与比对：MediaRemote 先更新曲目、封面稍后才到，
+    // 只看曲名会导致封面永远慢一首。
+    var lastIdentity = "<none>"
+    var lastTrackKey = "<none>"
+    var lastArtworkID = "none"
+
+    func emit(force: Bool = false) {
+        getPID(.main) { pid in
+            getPlaying(.main) { playing in
+                getInfo(.main) { info in
+                    let title = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
+                    let artist = info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
+                    let artwork = info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data
+                    let artworkID = artwork.map { "\\($0.count)-\\($0.hashValue)" } ?? "none"
+
+                    let trackKey = "\\(pid)|\\(title)|\\(artist)"
+                    let identity = "\\(trackKey)|\\(playing)|\\(artworkID)"
+                    guard force || identity != lastIdentity else { return }
+
+                    // 曲目刚换而封面数据没动，说明这张封面还属于上一首，先别显示。
+                    let trackChanged = trackKey != lastTrackKey
+                    let artworkStale = !force && trackChanged && artworkID == lastArtworkID
+
+                    lastIdentity = identity
+                    lastTrackKey = trackKey
+                    lastArtworkID = artworkID
+
+                    var output: [String: Any] = [
+                        "playing": playing,
+                        "pid": pid,
+                        "title": title,
+                        "artist": artist,
+                        "artworkStale": artworkStale,
+                    ]
+                    if let artwork {
+                        output["artwork"] = artwork.base64EncodedString()
+                    }
+                    if let json = try? JSONSerialization.data(withJSONObject: output),
+                       let str = String(data: json, encoding: .utf8) {
+                        FileHandle.standardOutput.write(Data((str + "\\n").utf8))
+                    }
+
+                    if artworkStale {
+                        // 封面可能稍后送达；若届时字节仍未变化，
+                        // 说明它确实属于当前曲目（例如同专辑连播），补发一次认可它。
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            emit(force: true)
+                        }
+                    }
                 }
-                if let json = try? JSONSerialization.data(withJSONObject: output),
-                   let str = String(data: json, encoding: .utf8) {
-                    print(str)
-                }
-                exit(0)
             }
         }
     }
-    RunLoop.main.run(until: Date().addingTimeInterval(3))
+
+    for name in [
+        "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
+        "kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification",
+        "kMRMediaRemoteNowPlayingApplicationDidChangeNotification",
+    ] {
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name(name), object: nil, queue: .main
+        ) { _ in emit() }
+    }
+
+    // 部分播放器不稳定发送 MediaRemote 通知。进程常驻后轮询几乎没有成本，
+    // 这里作为兜底，保证它们也能在 1 秒内同步。
+    Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in emit() }
+
+    emit()
+    RunLoop.main.run()
     """
 
-    private static func readNowPlayingDirect(_ completion: @escaping (NowPlayingSnapshot?) -> Void) -> Bool {
-        guard let h = mrHandle,
+    // MARK: - 生命周期
+
+    func startObserving() {
+        guard !isObserving else { return }
+        isObserving = true
+        Self.ensureMRRegistered()
+
+        // 进程内直读。在未被系统限制的机器上这一步即可拿到数据。
+        directRead()
+
+        startHelper()
+
+        // 轻量巡检：维持 hasNowPlaying（播放器开关），并在直读可用时保持同步。
+        // helper 不可用时，这是唯一的更新来源。
+        upkeepTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.upkeep()
+        }
+    }
+
+    func stopObserving() {
+        isObserving = false
+        upkeepTimer?.invalidate()
+        upkeepTimer = nil
+        pendingClearWorkItem?.cancel()
+        pendingClearWorkItem = nil
+        stopHelper()
+    }
+
+    deinit {
+        stopHelper()
+        upkeepTimer?.invalidate()
+    }
+
+    // MARK: - 媒体控制
+
+    // 通过系统媒体按键发送，不依赖 MediaRemote 命令通道，因此在所有机器上都可用。
+
+    func togglePlayPause() {
+        postSystemMediaKey(NX_KEYTYPE_PLAY)
+        isPlaying.toggle()
+        playingFrozenUntil = Date().addingTimeInterval(1.5)
+    }
+
+    func nextTrack() {
+        postSystemMediaKey(NX_KEYTYPE_NEXT)
+        playingFrozenUntil = Date().addingTimeInterval(1.5)
+    }
+
+    func previousTrack() {
+        postSystemMediaKey(NX_KEYTYPE_PREVIOUS)
+        playingFrozenUntil = Date().addingTimeInterval(1.5)
+    }
+
+    private func postSystemMediaKey(_ keyType: Int32) {
+        let flags = NSEvent.ModifierFlags(rawValue: 0xA00)
+        let keyDownData = (Int(keyType) << 16) | (0xA << 8)
+        let keyUpData = (Int(keyType) << 16) | (0xB << 8)
+        let keyDown = NSEvent.otherEvent(
+            with: .systemDefined, location: .zero, modifierFlags: flags,
+            timestamp: 0, windowNumber: 0, context: nil,
+            subtype: 8, data1: keyDownData, data2: -1
+        )
+        let keyUp = NSEvent.otherEvent(
+            with: .systemDefined, location: .zero, modifierFlags: flags,
+            timestamp: 0, windowNumber: 0, context: nil,
+            subtype: 8, data1: keyUpData, data2: -1
+        )
+        keyDown?.cgEvent?.post(tap: .cghidEventTap)
+        keyUp?.cgEvent?.post(tap: .cghidEventTap)
+    }
+
+    /// 轮盘弹出时调用。常驻 helper 已持续同步，这里只补一次直读。
+    func refreshForMenuPresentation() {
+        directRead()
+    }
+
+    // MARK: - 常驻 helper
+
+    private func startHelper() {
+        guard helperProcess == nil,
+              let swiftURL = Self.helperSwiftURL,
+              let scriptURL = Self.helperScriptURL else {
+            // 没有可用工具链：保留播放控制，仅无法显示曲目信息。
+            return
+        }
+
+        do {
+            try Self.helperScript.write(to: scriptURL, atomically: true, encoding: .utf8)
+        } catch {
+            NSLog("⚠️ 无法写入 now playing helper 脚本: %@", error.localizedDescription)
+            return
+        }
+
+        helperBuffer.reset()
+
+        let proc = Process()
+        let pipe = Pipe()
+        proc.executableURL = swiftURL
+        proc.arguments = [scriptURL.path]
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty, let self else { return }
+            let lines = self.helperBuffer.append(chunk)
+            guard !lines.isEmpty else { return }
+            DispatchQueue.main.async {
+                for line in lines {
+                    self.handleHelperLine(line)
+                }
+            }
+        }
+
+        proc.terminationHandler = { [weak self] _ in
+            pipe.fileHandleForReading.readabilityHandler = nil
+            DispatchQueue.main.async {
+                self?.helperDidTerminate()
+            }
+        }
+
+        do {
+            try proc.run()
+            helperProcess = proc
+        } catch {
+            NSLog("⚠️ 无法启动 now playing helper: %@", error.localizedDescription)
+            helperProcess = nil
+        }
+    }
+
+    private func stopHelper() {
+        helperRestartWorkItem?.cancel()
+        helperRestartWorkItem = nil
+        if let proc = helperProcess, proc.isRunning {
+            proc.terminationHandler = nil
+            proc.terminate()
+        }
+        helperProcess = nil
+    }
+
+    private func helperDidTerminate() {
+        helperProcess = nil
+        guard isObserving else { return }
+
+        // helper 意外退出时延迟重启，避免异常情况下反复拉起进程。
+        helperRestartWorkItem?.cancel()
+        let restart = DispatchWorkItem { [weak self] in
+            guard let self, self.isObserving else { return }
+            self.helperRestartWorkItem = nil
+            self.startHelper()
+        }
+        helperRestartWorkItem = restart
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: restart)
+    }
+
+    private func handleHelperLine(_ line: Data) {
+        guard let snapshot = Self.parseSnapshot(line) else { return }
+        apply(snapshot)
+    }
+
+    // MARK: - 进程内直读
+
+    /// - Parameter applyEmpty: 读到空结果时是否据此清理。
+    ///   仅在没有常驻 helper 时为真 —— helper 在运行时它才是权威数据源，
+    ///   直读被系统限制返回的空值不能用来覆盖它。
+    private func directRead(applyEmpty: Bool = false) {
+        guard let h = Self.mrHandle,
               let infoSym = dlsym(h, "MRMediaRemoteGetNowPlayingInfo"),
               let playingSym = dlsym(h, "MRMediaRemoteGetNowPlayingApplicationIsPlaying"),
               let pidSym = dlsym(h, "MRMediaRemoteGetNowPlayingApplicationPID") else {
-            return false
+            return
         }
 
-        ensureMRRegistered()
+        Self.ensureMRRegistered()
 
         typealias GetInfo = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
         typealias GetPlaying = @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
@@ -289,222 +361,173 @@ class NowPlayingService: ObservableObject {
         let getPlaying = unsafeBitCast(playingSym, to: GetPlaying.self)
         let getPID = unsafeBitCast(pidSym, to: GetPID.self)
 
-        getPID(.main) { pid in
+        getPID(.main) { [weak self] pid in
             getPlaying(.main) { playing in
                 getInfo(.main) { info in
                     let title = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
-                    let artist = info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
-                    let artworkData = info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data
-                    completion(NowPlayingSnapshot(
+                    // 直读被系统限制时会返回空。此时不要覆盖 helper 推来的数据。
+                    guard !title.isEmpty else {
+                        if applyEmpty { self?.scheduleClear() }
+                        return
+                    }
+                    self?.apply(NowPlayingSnapshot(
                         pid: pid,
                         title: title,
-                        artist: artist,
+                        artist: info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? "",
                         playing: playing,
-                        artworkData: artworkData
+                        artworkData: info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data
                     ))
                 }
             }
         }
-
-        return true
     }
 
-    private func refreshNowPlaying() {
-        let musicApp = runningMusicApp
-        let expectedBID = musicApp?.bundleIdentifier
+    /// 播放器启停不一定触发 MediaRemote 通知，这里维持占位状态的准确性。
+    private func upkeep() {
+        // helper 在跑时它是权威来源，直读的空结果不参与清理。
+        directRead(applyEmpty: helperProcess == nil)
 
-        if refreshInFlight {
-            refreshQueuedAfterInFlight = true
-            return
-        }
+        // 正在显示曲目时不做任何清理判断。
+        // 运行中的播放器只是可选提示：沙箱构建可能枚举不到它，
+        // 若据此清空，会在音乐正常播放时误清有效信息。
+        guard trackName.isEmpty else { return }
 
-        refreshProcess?.terminate()
-        refreshProcess = nil
-        refreshInFlight = true
-        refreshQueuedAfterInFlight = false
-        activeRefreshID += 1
-        let refreshID = activeRefreshID
-
-        scheduleRefreshTimeout(refreshID: refreshID, expectedBID: expectedBID)
-
-        if Self.readNowPlayingDirect({ [weak self] snapshot in
-            DispatchQueue.main.async {
-                guard let self = self,
-                      self.refreshInFlight,
-                      self.activeRefreshID == refreshID else {
-                    return
-                }
-
-                if let snapshot = snapshot, !snapshot.title.isEmpty {
-                    self.completeRefresh(snapshot, expectedBID: expectedBID, refreshID: refreshID)
-                } else {
-                    self.startHelperRefresh(expectedBID: expectedBID, refreshID: refreshID)
-                }
-            }
-        }) {
-            return
-        }
-
-        startHelperRefresh(expectedBID: expectedBID, refreshID: refreshID)
-    }
-
-    private func scheduleRefreshTimeout(refreshID: Int, expectedBID: String?) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + refreshTimeout) { [weak self] in
-            guard let self = self,
-                  self.refreshInFlight,
-                  self.activeRefreshID == refreshID else {
-                return
-            }
-            self.refreshProcess?.terminate()
-            self.completeRefresh(nil, expectedBID: expectedBID, refreshID: refreshID)
+        let playerRunning = runningMusicApp != nil
+        if hasNowPlaying != playerRunning {
+            hasNowPlaying = playerRunning
         }
     }
 
-    private func startHelperRefresh(expectedBID: String?, refreshID: Int) {
-        guard let swiftURL = Self.helperSwiftURL,
-              let helperScriptURL = Self.helperScriptURL else {
-            completeRefresh(nil, expectedBID: expectedBID, refreshID: refreshID)
-            return
-        }
-        do {
-            try Self.helperScript.write(to: helperScriptURL, atomically: true, encoding: .utf8)
-        } catch {
-            completeRefresh(nil, expectedBID: expectedBID, refreshID: refreshID)
-            return
-        }
+    // MARK: - 状态更新
 
-        let proc = Process()
-        let output = Pipe()
-        let outputBuffer = HelperOutputBuffer()
-        proc.executableURL = swiftURL
-        proc.arguments = [helperScriptURL.path]
-        proc.standardOutput = output
-        proc.standardError = FileHandle.nullDevice
-        refreshProcess = proc
-
-        output.fileHandleForReading.readabilityHandler = { handle in
-            outputBuffer.append(handle.availableData)
-        }
-
-        proc.terminationHandler = { [weak self] _ in
-            output.fileHandleForReading.readabilityHandler = nil
-            outputBuffer.append(output.fileHandleForReading.readDataToEndOfFile())
-            let data = outputBuffer.snapshot()
-            let snapshot = Self.parseHelperOutput(data)
-            DispatchQueue.main.async {
-                self?.completeRefresh(snapshot, expectedBID: expectedBID, refreshID: refreshID)
-            }
-        }
-
-        do {
-            try proc.run()
-        } catch {
-            refreshProcess = nil
-            completeRefresh(nil, expectedBID: expectedBID, refreshID: refreshID)
-        }
+    private struct NowPlayingSnapshot {
+        let pid: Int32
+        let title: String
+        let artist: String
+        let playing: Bool
+        let artworkData: Data?
+        /// 封面仍属于上一首曲目，尚不可信
+        var artworkStale: Bool = false
     }
 
-    private func completeRefresh(_ snapshot: NowPlayingSnapshot?, expectedBID: String?, refreshID: Int) {
-        guard refreshInFlight, refreshID == activeRefreshID else { return }
-        refreshInFlight = false
-        refreshProcess = nil
-
-        if let snapshot = snapshot {
-            applyNowPlaying(snapshot, expectedBID: expectedBID)
-        } else {
-            handleEmptyNowPlaying()
-        }
-
-        if refreshQueuedAfterInFlight {
-            refreshQueuedAfterInFlight = false
-            refreshNowPlaying()
-        }
-    }
-
-    private static func parseHelperOutput(_ data: Data) -> NowPlayingSnapshot? {
+    private static func parseSnapshot(_ data: Data) -> NowPlayingSnapshot? {
         guard !data.isEmpty,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-
-        let pid = Int32(json["pid"] as? Int ?? -1)
-        let title = json["title"] as? String ?? ""
-        let artist = json["artist"] as? String ?? ""
-        let playing = json["playing"] as? Bool ?? false
-        let artworkData = (json["artwork"] as? String).flatMap { Data(base64Encoded: $0) }
-
         return NowPlayingSnapshot(
-            pid: pid,
-            title: title,
-            artist: artist,
-            playing: playing,
-            artworkData: artworkData
+            pid: Int32(json["pid"] as? Int ?? -1),
+            title: json["title"] as? String ?? "",
+            artist: json["artist"] as? String ?? "",
+            playing: json["playing"] as? Bool ?? false,
+            artworkData: (json["artwork"] as? String).flatMap { Data(base64Encoded: $0) },
+            artworkStale: json["artworkStale"] as? Bool ?? false
         )
     }
 
-    private func applyNowPlaying(_ snapshot: NowPlayingSnapshot, expectedBID: String?) {
-        if snapshot.title.isEmpty && snapshot.pid <= 0 {
-            handleEmptyNowPlaying()
-            return
-        }
-
+    private func apply(_ snapshot: NowPlayingSnapshot) {
+        // 报告方不是已知播放器时，说明是系统里其他发声来源，不予采信。
         if snapshot.pid > 0,
            let app = NSRunningApplication(processIdentifier: snapshot.pid),
            let bundleID = app.bundleIdentifier,
-           let expectedBID = expectedBID,
-           bundleID != expectedBID,
-           !Self.musicBundleIDs.contains(bundleID) {
-            clearStaleNowPlaying()
+           !Self.musicBundleIDs.contains(bundleID),
+           let expected = runningMusicApp?.bundleIdentifier,
+           bundleID != expected {
+            scheduleClear()
             return
         }
 
-        let title = snapshot.title
-        let trackChanged = self.trackName != title
+        guard !snapshot.title.isEmpty else {
+            scheduleClear()
+            return
+        }
 
-        emptyRefreshCount = 0
-        self.trackName = title
-        self.artistName = snapshot.artist
-        // 冻结期内不覆盖 isPlaying（防止命令后旧状态回弹）
+        cancelPendingClear()
+
+        let trackChanged = trackName != snapshot.title
+        trackName = snapshot.title
+        artistName = snapshot.artist
+        hasNowPlaying = true
+
+        // 冻结期内不覆盖 isPlaying，防止命令刚发出就被旧状态回弹
         if Date() > playingFrozenUntil {
-            self.isPlaying = snapshot.playing
+            isPlaying = snapshot.playing
         }
-        self.hasNowPlaying = !title.isEmpty || runningMusicApp != nil
 
-        if let artData = snapshot.artworkData {
-            self.albumArt = NSImage(data: artData)
-        } else if trackChanged && !title.isEmpty {
-            // 封面可能延迟到达，短暂后重读
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.refreshNowPlaying()
-            }
-        } else if title.isEmpty {
-            self.albumArt = nil
+        if snapshot.artworkStale {
+            // 宁可短暂显示占位图，也不要挂上一首歌的封面。
+            // helper 会在封面到达或确认无变化后补发。
+            albumArt = nil
+        } else if let artData = snapshot.artworkData {
+            albumArt = NSImage(data: artData)
+        } else if trackChanged {
+            albumArt = nil
         }
     }
 
-    private func handleEmptyNowPlaying() {
-        emptyRefreshCount += 1
-
-        if runningMusicApp != nil && !trackName.isEmpty && emptyRefreshCount <= maxEmptyRefreshesBeforeClear {
-            hasNowPlaying = true
-            if Date() > playingFrozenUntil {
-                isPlaying = false
+    /// 元数据读空时延迟清理。切歌瞬间常有短暂空窗，立即清空会导致闪烁。
+    private func scheduleClear() {
+        guard !trackName.isEmpty else {
+            if runningMusicApp == nil {
+                clearNowPlaying()
+            } else {
+                hasNowPlaying = true
             }
             return
         }
+        guard pendingClearWorkItem == nil else { return }
 
-        clearStaleNowPlaying()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingClearWorkItem = nil
+            self.clearNowPlaying()
+        }
+        pendingClearWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + staleClearDelay, execute: work)
     }
 
-    private func clearStaleNowPlaying() {
-        emptyRefreshCount = 0
-        hasNowPlaying = false
+    private func cancelPendingClear() {
+        pendingClearWorkItem?.cancel()
+        pendingClearWorkItem = nil
+    }
+
+    private func clearNowPlaying() {
+        cancelPendingClear()
         trackName = ""
         artistName = ""
-        isPlaying = false
         albumArt = nil
-        if refreshInFlight {
-            refreshInFlight = false
+        if Date() > playingFrozenUntil {
+            isPlaying = false
         }
+        // 播放器仍在运行时保留占位控制器，让用户仍能操作播放。
+        hasNowPlaying = runningMusicApp != nil
+    }
+}
+
+// MARK: - 行缓冲
+
+/// helper 以「一行一条 JSON」的形式流式输出，管道读到的分片需要按行重组。
+private final class LineBuffer {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) -> [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        data.append(chunk)
+        var lines: [Data] = []
+        while let newlineIndex = data.firstIndex(of: 0x0A) {
+            let line = data.subdata(in: data.startIndex..<newlineIndex)
+            data = data.subdata(in: data.index(after: newlineIndex)..<data.endIndex)
+            if !line.isEmpty { lines.append(line) }
+        }
+        return lines
+    }
+
+    func reset() {
+        lock.lock()
+        data.removeAll()
+        lock.unlock()
     }
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""轮盘弹出时的刷新契约，以及过期状态的清理。"""
 from pathlib import Path
 
 
@@ -25,11 +26,10 @@ def main() -> None:
 
     requirements = [
         ("func refreshForMenuPresentation()", "public refresh entrypoint for menu presentation"),
-        ("refreshNowPlaying()", "immediate now-playing refresh when presenting the menu"),
-        ("0.2, 0.7, 1.4", "short follow-up refreshes after presentation"),
-        ("clearStaleNowPlaying()", "stale now-playing state is actively cleared"),
-        ("bundleID != expectedBID", "bundle mismatch branch still guards app identity"),
-        ("clearStaleNowPlaying()", "bundle mismatch clears stale displayed track instead of preserving it"),
+        ("directRead()", "immediate now-playing read when presenting the menu"),
+        ("private func clearNowPlaying", "stale now-playing state is actively cleared"),
+        ("bundleID != expected", "bundle mismatch branch still guards app identity"),
+        ("scheduleClear()", "bundle mismatch drops the stale displayed track"),
     ]
 
     for needle, reason in requirements:

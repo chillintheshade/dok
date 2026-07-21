@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""直读优先契约。
+
+进程内直读是即时的，在未被系统限制的机器上应当优先采用；
+常驻 helper 是被限制时的兜底数据源。两者都必须存在。
+"""
 from pathlib import Path
 import re
 
@@ -9,27 +14,32 @@ SOURCE = ROOT / "Sources" / "Arcly" / "NowPlayingService.swift"
 
 def main() -> None:
     source = SOURCE.read_text()
-    assert "readNowPlayingDirect" in source, "NowPlayingService should have an in-process MediaRemote reader"
 
-    match = re.search(
-        r"private func refreshNowPlaying\(\) \{(?P<body>.*?)\n    \}\n\n    private func scheduleRefreshTimeout",
-        source,
-        re.S,
-    )
-    assert match, "refreshNowPlaying body not found"
+    assert "private func directRead" in source, "NowPlayingService should have an in-process MediaRemote reader"
+    assert "private func startHelper()" in source, "persistent helper fallback should exist"
+    assert "Process()" in source, "helper fallback should remain available"
+
+    match = re.search(r"func startObserving\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert match, "startObserving body not found"
     body = match.group("body")
 
-    direct_index = body.find("Self.readNowPlayingDirect")
-    helper_index = body.find("startHelperRefresh")
-    assert direct_index != -1, "refreshNowPlaying should start with direct MediaRemote reads"
-    assert helper_index != -1, "helper fallback should still be called"
-    assert direct_index < helper_index, "direct MediaRemote read should run before helper fallback"
-    assert "!snapshot.title.isEmpty" in body, "direct reads should only complete when they include track metadata"
-    assert "self.startHelperRefresh(expectedBID: expectedBID, refreshID: refreshID)" in body, (
-        "direct reads without metadata should fall back to the helper reader"
+    direct_index = body.find("directRead()")
+    helper_index = body.find("startHelper()")
+    assert direct_index != -1, "startObserving should attempt an immediate direct read"
+    assert helper_index != -1, "startObserving should start the persistent helper"
+    assert direct_index < helper_index, "direct MediaRemote read should run before spawning the helper"
+
+    # 直读被限制时返回空标题，这种空值不得覆盖 helper 推送的有效数据。
+    assert "guard !title.isEmpty else {" in source, (
+        "direct reads should only apply when they include track metadata"
+    )
+    assert "applyEmpty" in source, (
+        "empty direct reads may only clear state when no persistent helper is running"
+    )
+    assert "directRead(applyEmpty: helperProcess == nil)" in source, (
+        "helper output must win over restricted direct reads"
     )
 
-    assert "Process()" in source, "helper fallback should remain available"
     assert "🎵" not in source, "temporary diagnostic music logs should not ship"
 
     print("Now-playing direct primary contract passed.")
