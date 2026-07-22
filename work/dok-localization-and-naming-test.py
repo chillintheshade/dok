@@ -27,7 +27,7 @@ for relative_path, snippets in required_localizations.items():
 readme = (ROOT / "README.md").read_text()
 assert "English and Simplified Chinese UI" in readme
 assert "支持英文和简体中文界面" in readme
-assert "docs/github/dok-wheel-music.png" in readme
+assert "docs/github/dok-wheel-music.jpg" in readme
 assert "docs/github/dok-settings-wheel.png" in readme
 assert "docs/github/dok-settings-general.png" in readme
 assert "GitHub Releases" in readme

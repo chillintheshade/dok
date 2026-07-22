@@ -31,7 +31,7 @@ dok 当前需要 macOS 26.0 或更高版本。
 ## Preview / 预览
 
 <p align="center">
-  <img src="docs/github/dok-wheel-music.png" width="460" alt="dok command wheel with music controls">
+  <img src="docs/github/dok-wheel-music.jpg" width="460" alt="dok command wheel with music controls">
 </p>
 
 <p align="center">
@@ -44,18 +44,22 @@ dok 当前需要 macOS 26.0 或更高版本。
 
 ## Highlights / 亮点
 
-- Liquid-glass radial menu that floats above the desktop  
-  液态玻璃质感的 macOS 轮盘，轻盈覆盖在当前工作区上
-- Launch apps, files, and folders from fixed wheel slots  
-  常用应用、文件、文件夹可以固定到轮盘槽位
-- Playback controls in the center, with track info where the system allows it  
-  中心区域提供播放控制，在系统允许的情况下同时显示当前曲目
-- Hotkey and mouse-trigger launch modes  
-  支持快捷键唤出，也支持鼠标按键触发
-- Adjustable radius, icon size, opacity, theme, and position  
-  可调整半径、图标大小、透明度、主题和唤出位置
-- English and Simplified Chinese UI, following the macOS system language  
-  支持英文和简体中文界面，自动跟随 macOS 系统语言
+- True liquid glass: the wheel samples your desktop through macOS's native glass material, the same look as Control Center  
+  真·液态玻璃：轮盘用系统原生玻璃材质实时采样桌面，观感与控制中心同源
+- Music at the center: artwork, track info, a minimal progress arc — tap the arc to seek  
+  中心音乐区：封面、曲目和极简进度弧，点按进度弧即可跳转播放位置
+- Works out of the box on every Mac: track info requires no developer tools, thanks to a bundled adapter running on Apple-signed Perl  
+  所有 Mac 开箱即用：歌曲信息不依赖任何开发者工具，由内置 adapter 借系统 Perl 读取
+- Recent-app satellites orbit below the wheel, so your last-used apps are one flick away  
+  最近使用的应用以「卫星」形式停在轮盘下缘，甩手即达
+- Dock-style notification badges on wheel slots and satellites  
+  槽位和卫星显示与 Dock 一致的未读角标
+- Right-click a running app to quit it without leaving the wheel  
+  右键运行中的应用槽位，可直接退出该应用
+- Launch by hotkey or mouse button, in click or hold-and-release mode  
+  支持快捷键或鼠标按键唤出，可选「点击」或「按住-松开」两种模式
+- Adjustable radius, icon size, opacity, theme, and position; English and Simplified Chinese UI  
+  半径、图标、透明度、主题、唤出位置皆可调；支持英文和简体中文界面
 
 ## Download / 下载
 
@@ -96,6 +100,26 @@ The bundle identifier still uses `com.qingshan.orbis` to preserve update compati
 **Everything works out of the box on every Mac — no developer tools required.** When available, playback controls use the bundled MediaRemote adapter; system media keys are a fallback only. Track name and artwork are read through the same helper framework ([mediaremote-adapter](https://github.com/ungive/mediaremote-adapter), BSD-3-Clause), which runs on the system's Apple-signed Perl interpreter. Placeholder play brings the preferred running player forward and records a short-lived intent; Play is sent only after that player exposes a controllable session, so an ownerless media key cannot accidentally launch Apple Music.
 
 **所有功能开箱即用，不需要安装任何开发工具。** 播放控制优先通过打包的 MediaRemote adapter 发送，只有 adapter 不可用时才退回系统媒体按键。占位状态点击播放会把优先播放器带到前台并记录短时意图；目标播放器建立可控会话后才补发播放，因此不会因无会话所有者而误启 Apple Music。歌名和封面由同一个 helper 框架（[mediaremote-adapter](https://github.com/ungive/mediaremote-adapter)，BSD-3-Clause 协议）读取，它借助系统自带、Apple 签名的 Perl 解释器运行。
+
+## FAQ / 常见问题
+
+**The menu bar icon is missing. / 菜单栏图标不见了？**
+
+macOS 26 can hide any app from the menu bar system-wide. Open System Settings → Menu Bar → "Allow in the Menu Bar" and switch dok on.
+
+macOS 26 可以在系统层面隐藏某个 App 的菜单栏图标。打开 系统设置 → 菜单栏 → 「允许在菜单栏显示」，把 dok 打开即可。
+
+**A player is running but the wheel shows no track. / 播放器开着，轮盘却不显示歌曲？**
+
+Some players (QQ Music, for example) don't register a system Now Playing session until you press play once inside the app. Start playback there first; dok picks it up automatically.
+
+部分播放器（例如 QQ音乐）在手动播放一次之前不会向系统注册「正在播放」会话。先在播放器里点一次播放，dok 就会自动读到。
+
+**The mouse trigger doesn't respond. / 鼠标触发没反应？**
+
+Mouse-button triggers require Accessibility permission. dok's General settings shows a grant shortcut whenever it is needed.
+
+鼠标按键触发需要「辅助功能」权限，需要时设置页会显示去授权入口。
 
 ## Notes / 说明
 
