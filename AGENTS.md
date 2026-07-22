@@ -49,14 +49,14 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 
 ## Current State (2026-07-22)
 
-- App version is 1.0.1; the local source and `/Applications/dok.app` include newer wheel and settings fixes.
+- App version is 1.1.0; the local source and `/Applications/dok.app` include the current wheel and settings fixes.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
 - Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - Glass look is final: native `.clear` sampling with a `0.03` black tint base, no extra tone layer, native edge plus a single `0.55pt` white supplement. `menuOpacity` maps linearly to material intensity; 100% is the approved look.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
 - Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-app satellites (default 2) sit outside the wheel at 6 o'clock, snapshotted at show time; Dock notification badges render on slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
-- `dist/Arcly-1.0.1.dmg` is an older valid signed package and does not contain the current fixes.
+- `dist/dok-1.1.0.dmg` is the current ad-hoc-signed self-distribution package.
 
 ## Next Release
 
