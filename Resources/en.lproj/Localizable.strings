@@ -64,6 +64,7 @@
 "settings.opacity" = "Opacity";
 "settings.launchAtLogin" = "Launch at Login";
 "settings.menuBar" = "Menu Bar";
+"settings.notificationBadges" = "Notification Badges";
 
 "permission.accessibility.needed" = "Mouse trigger needs Accessibility access";
 "permission.accessibility.open" = "Open Settings";

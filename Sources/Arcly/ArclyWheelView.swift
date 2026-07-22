@@ -213,6 +213,35 @@ enum RecentAppSatelliteGeometry {
     }
 }
 
+private struct SlotNotificationBadge: View {
+    let text: String
+    let iconSize: CGFloat
+
+    private var displayText: String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let number = Int(trimmed), number > 99 {
+            return "99+"
+        }
+        return trimmed
+    }
+
+    private var diameter: CGFloat { max(13, iconSize * 0.4) }
+
+    var body: some View {
+        Text(displayText)
+            .font(.system(size: max(8, iconSize * 0.2), weight: .semibold))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.55)
+            .padding(.horizontal, diameter * 0.24)
+            .frame(minWidth: diameter, minHeight: diameter)
+            .background(Color(red: 0.94, green: 0.18, blue: 0.16), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.72), lineWidth: 0.7))
+            .shadow(color: .black.opacity(0.2), radius: 1.5, y: 0.75)
+            .allowsHitTesting(false)
+    }
+}
+
 // MARK: - ArclyWheelView
 
 struct ArclyWheelView: View {
@@ -408,6 +437,11 @@ struct ArclyWheelView: View {
                         .frame(width: iconSize, height: iconSize)
                 }
 
+                if let badge = appState.notificationBadge(for: app) {
+                    SlotNotificationBadge(text: badge, iconSize: iconSize)
+                        .offset(x: iconSize * 0.36, y: -iconSize * 0.36)
+                }
+
                 // 运行中指示点
                 if app.isRunning {
                     Circle()
@@ -481,6 +515,11 @@ struct ArclyWheelView: View {
                 .background(.regularMaterial, in: Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.32), lineWidth: 0.5))
                 .offset(x: baseDiameter * 0.31, y: baseDiameter * 0.31)
+
+            if let badge = appState.notificationBadge(for: app) {
+                SlotNotificationBadge(text: badge, iconSize: satelliteIconSize)
+                    .offset(x: baseDiameter * 0.31, y: -baseDiameter * 0.31)
+            }
 
             if app.isRunning {
                 Circle()

@@ -965,6 +965,13 @@ struct GeneralSettingsView: View {
                         NotificationCenter.default.post(name: .menuBarIconChanged, object: nil)
                     }
             }
+
+            SettingDivider()
+
+            SettingRow(title: Loc.string("settings.notificationBadges")) {
+                Toggle("", isOn: $appState.settings.showNotificationBadges)
+                    .labelsHidden()
+            }
         }
         .frame(maxWidth: .infinity)
     }

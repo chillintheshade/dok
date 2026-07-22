@@ -468,6 +468,7 @@ struct AppSettings: Codable {
     var hapticFeedback: Bool = true
     var soundEffects: Bool = true
     var showMenuBarIcon: Bool = true
+    var showNotificationBadges: Bool = true
     var showMusicControl: Bool = true
     var mouseTrigger: MouseTrigger = .none
     var hasCompletedOnboarding: Bool = false
@@ -491,6 +492,7 @@ struct AppSettings: Codable {
         hapticFeedback = (try? c.decode(Bool.self, forKey: .hapticFeedback)) ?? true
         soundEffects = (try? c.decode(Bool.self, forKey: .soundEffects)) ?? true
         showMenuBarIcon = (try? c.decode(Bool.self, forKey: .showMenuBarIcon)) ?? true
+        showNotificationBadges = (try? c.decode(Bool.self, forKey: .showNotificationBadges)) ?? true
         showMusicControl = (try? c.decode(Bool.self, forKey: .showMusicControl)) ?? true
         mouseTrigger = (try? c.decode(MouseTrigger.self, forKey: .mouseTrigger)) ?? .none
         hasCompletedOnboarding = (try? c.decode(Bool.self, forKey: .hasCompletedOnboarding)) ?? false
@@ -543,6 +545,7 @@ class AppState: ObservableObject {
     @Published var selectedIndex: Int? = nil
     @Published var selectedRecentAppIndex: Int? = nil
     @Published private(set) var recentAppSnapshot: [AppItem] = []
+    @Published private(set) var notificationBadgeSnapshot: DockNotificationBadgeSnapshot = .empty
     @Published var isMenuVisible: Bool = false
     let nowPlaying = NowPlayingService()
     private var workspaceActivationObserver: NSObjectProtocol?
@@ -615,6 +618,16 @@ class AppState: ObservableObject {
             ? Array(eligible.prefix(settings.recentAppCount))
             : []
         selectedRecentAppIndex = nil
+    }
+
+    func snapshotNotificationBadges() {
+        notificationBadgeSnapshot = settings.showNotificationBadges
+            ? DockNotificationBadgeReader.snapshot()
+            : .empty
+    }
+
+    func notificationBadge(for app: AppItem) -> String? {
+        notificationBadgeSnapshot.badge(for: app)
     }
 
     private func recordActivatedApplication(from notification: Notification) {

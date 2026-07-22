@@ -64,6 +64,7 @@
 "settings.opacity" = "透明度";
 "settings.launchAtLogin" = "开机启动";
 "settings.menuBar" = "菜单栏";
+"settings.notificationBadges" = "通知角标";
 
 "permission.accessibility.needed" = "鼠标触发需要辅助功能权限";
 "permission.accessibility.open" = "去授权";

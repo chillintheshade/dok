@@ -169,6 +169,7 @@ class ArclyWheelWindow: NSWindow {
         }
 
         self.appState.snapshotRecentApps()
+        self.appState.snapshotNotificationBadges()
 
         self.appState.isMenuVisible = false
         self.ignoresMouseEvents = true

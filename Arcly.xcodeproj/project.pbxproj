@@ -43,6 +43,7 @@
 		D6BF87920D1327496D5E1124 /* keys.h in Headers */ = {isa = PBXBuildFile; fileRef = A79358561497670C75C4894B /* keys.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		F19ABBC79506C62119E95AA0 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D085CE1A62D10FEC999E395A /* UniformTypeIdentifiers.framework */; };
 		F411CE2C74630226A3DB6820 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C26FE4FEFD4D226D62582EBF /* Localizable.strings */; };
+		FAF3F0EAABAC45A3028C6D18 /* DockNotificationBadgeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8438E5338F764ACE9F783C73 /* DockNotificationBadgeReader.swift */; };
 		FB4D8F7E3904F8486D195AE5 /* speed.m in Sources */ = {isa = PBXBuildFile; fileRef = F562ABE9D2C34B16FEDBA6A0 /* speed.m */; };
 		FE2ADD05443E8B88FD3B196C /* send.m in Sources */ = {isa = PBXBuildFile; fileRef = 1E796155F469391C6FAA4A4B /* send.m */; };
 /* End PBXBuildFile section */
@@ -94,6 +95,7 @@
 		7EEAB5C3883C9F5E591566C4 /* env.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = env.m; sourceTree = "<group>"; };
 		819802F391EACA794F99951F /* Debounce.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Debounce.m; sourceTree = "<group>"; };
 		83894FC941D0EEC34AFDDFD7 /* mediaremote-adapter.pl */ = {isa = PBXFileReference; lastKnownFileType = text.script.perl; path = "mediaremote-adapter.pl"; sourceTree = "<group>"; };
+		8438E5338F764ACE9F783C73 /* DockNotificationBadgeReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockNotificationBadgeReader.swift; sourceTree = "<group>"; };
 		860CE57866C390DE03ADE973 /* globals.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = globals.m; sourceTree = "<group>"; };
 		8D7BAF034B69FA3BAAE1AEB9 /* stream.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = stream.m; sourceTree = "<group>"; };
 		90627DE15D21F45F82129568 /* Debounce.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Debounce.h; sourceTree = "<group>"; };
@@ -206,6 +208,7 @@
 				5FDEEAD4F36FDB9566081569 /* ArclyApp.swift */,
 				6CCC58C5166E5E21FD3F7370 /* ArclyWheelView.swift */,
 				6646241D8B0C2809F35B24B1 /* ArclyWheelWindow.swift */,
+				8438E5338F764ACE9F783C73 /* DockNotificationBadgeReader.swift */,
 				0209F6453CA4A9038EC2756D /* Localization.swift */,
 				DB50646A3799BBF8742A9035 /* NowPlayingService.swift */,
 				38B1F7055A4E3824231BF5F2 /* SettingsView.swift */,
@@ -397,6 +400,7 @@
 				3E534ADEF6A5A3466DDDF1F2 /* ArclyApp.swift in Sources */,
 				BB786583CF28C88E39FD64AD /* ArclyWheelView.swift in Sources */,
 				06174937063A76E2E7B94AEC /* ArclyWheelWindow.swift in Sources */,
+				FAF3F0EAABAC45A3028C6D18 /* DockNotificationBadgeReader.swift in Sources */,
 				82ADD7685570705B5324D884 /* Localization.swift in Sources */,
 				62685DCCE0319F160908360D /* NowPlayingService.swift in Sources */,
 				2F264C1A060775E6FCC16E11 /* SettingsView.swift in Sources */,
