@@ -62,7 +62,19 @@ def main() -> None:
         assert path.exists(), f"Missing renamed source file: {path.relative_to(ROOT)}"
         require(path.read_text(), symbol, f"renamed Swift symbol in {filename}")
 
-    require(app, 'accessibilityDescription: "dok"', "menu bar accessibility name")
+    for needle in [
+        "private func statusBarBrandImage() -> NSImage",
+        "let imageSize = NSSize(width: 18, height: 18)",
+        "let orbitRadius: CGFloat = 6.2",
+        "let satelliteRadius: CGFloat = 1.4",
+        "let centerRadius: CGFloat = 2",
+        "for index in 0..<8",
+        "NSImage(size: imageSize, flipped: false)",
+        "image.isTemplate = true",
+        'image.accessibilityDescription = "dok"',
+    ]:
+        require(app, needle, "menu bar brand icon contract")
+    forbid(app, 'systemSymbolName: "circle.grid.cross"', "legacy SF Symbol menu bar icon")
     require(app, 'button.toolTip = "dok"', "menu bar tooltip")
     require(readme, "# dok", "README title")
     require(readme, "github.com/chillintheshade/dok", "README repository URL")

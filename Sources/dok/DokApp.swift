@@ -313,14 +313,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - 菜单栏图标
 
+    private func statusBarBrandImage() -> NSImage {
+        let imageSize = NSSize(width: 18, height: 18)
+        let center = NSPoint(x: imageSize.width / 2, y: imageSize.height / 2)
+        let orbitRadius: CGFloat = 6.2
+        let satelliteRadius: CGFloat = 1.4
+        let centerRadius: CGFloat = 2
+
+        let image = NSImage(size: imageSize, flipped: false) { _ in
+            NSColor.black.setFill()
+
+            for index in 0..<8 {
+                let angle = CGFloat(index) * (.pi / 4) - (.pi / 2)
+                let dotCenter = NSPoint(
+                    x: center.x + cos(angle) * orbitRadius,
+                    y: center.y + sin(angle) * orbitRadius
+                )
+                NSBezierPath(
+                    ovalIn: NSRect(
+                        x: dotCenter.x - satelliteRadius,
+                        y: dotCenter.y - satelliteRadius,
+                        width: satelliteRadius * 2,
+                        height: satelliteRadius * 2
+                    )
+                ).fill()
+            }
+
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x: center.x - centerRadius,
+                    y: center.y - centerRadius,
+                    width: centerRadius * 2,
+                    height: centerRadius * 2
+                )
+            ).fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "dok"
+        return image
+    }
+
     func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            if let img = NSImage(systemSymbolName: "circle.grid.cross", accessibilityDescription: "dok") {
-                img.size = NSSize(width: 17, height: 17)
-                img.isTemplate = true
-                button.image = img
-            }
+            button.image = statusBarBrandImage()
             button.imagePosition = .imageOnly
             button.toolTip = "dok"
             NSLog("✅ 状态栏图标已创建")
