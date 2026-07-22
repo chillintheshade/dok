@@ -22,9 +22,18 @@ class NowPlayingService: ObservableObject {
     private var isObserving = false
     private var helperProcess: Process?
     private var helperRestartWorkItem: DispatchWorkItem?
+    private var helperStartDate: Date = .distantPast
     private let helperBuffer = LineBuffer()
     private var upkeepTimer: Timer?
     private var pendingClearWorkItem: DispatchWorkItem?
+
+    /// 可用的 helper 后端，按优先级排列；快速失败的后端会被移出队列。
+    private var backendQueue: [HelperBackend] = []
+
+    /// 封面归属追踪：检测"曲目换了、封面还是上一首的"这种滞后。
+    private var lastAppliedTrackKey: String = ""
+    private var lastAppliedArtworkFingerprint: String?
+    private var artworkSettleWorkItem: DispatchWorkItem?
 
     /// 发送播放命令后短暂冻结，防止旧状态覆盖乐观更新
     private var playingFrozenUntil: Date = .distantPast
@@ -68,6 +77,38 @@ class NowPlayingService: ObservableObject {
         mrRegistered = true
     }
 
+    // MARK: - Helper 后端
+
+    /// 读取"正在播放"信息的两条路，按优先级排列：
+    ///
+    /// 1. `perlAdapter` —— 打包在 App 里的 MediaRemoteAdapter.framework（BSD-3，
+    ///    见 Vendor/），由系统自带的 `/usr/bin/perl`（Apple 签名，被系统视作
+    ///    `com.apple.perl`）加载运行。所有 Mac 都可用，无需任何开发工具。
+    /// 2. `swiftToolchain` —— 旧方案：把脚本交给 Swift 工具链解释执行。
+    ///    仅在装有 Xcode/CLT 的机器上可用，作为 perl 路不通时的兜底。
+    private enum HelperBackend {
+        case perlAdapter
+        case swiftToolchain
+    }
+
+    private static let perlURL: URL? = {
+        let path = "/usr/bin/perl"
+        return FileManager.default.isExecutableFile(atPath: path)
+            ? URL(fileURLWithPath: path) : nil
+    }()
+
+    private static let adapterScriptURL: URL? =
+        Bundle.main.url(forResource: "mediaremote-adapter", withExtension: "pl")
+
+    private static let adapterFrameworkURL: URL? = {
+        guard let url = Bundle.main.privateFrameworksURL?
+            .appendingPathComponent("MediaRemoteAdapter.framework"),
+            FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
+    }()
+
     /// Swift 工具链路径。只认真实存在的安装，不碰 `/usr/bin/swift`
     /// —— 那是个 shim，未安装命令行工具时调用会弹出系统安装对话框。
     private static let helperSwiftURL: URL? = {
@@ -79,6 +120,17 @@ class NowPlayingService: ObservableObject {
             URL(fileURLWithPath: $0)
         }
     }()
+
+    private static func availableBackends() -> [HelperBackend] {
+        var result: [HelperBackend] = []
+        if perlURL != nil, adapterScriptURL != nil, adapterFrameworkURL != nil {
+            result.append(.perlAdapter)
+        }
+        if helperSwiftURL != nil, helperScriptURL != nil {
+            result.append(.swiftToolchain)
+        }
+        return result
+    }
 
     private static let helperScriptURL: URL? = {
         guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -188,6 +240,7 @@ class NowPlayingService: ObservableObject {
         // 进程内直读。在未被系统限制的机器上这一步即可拿到数据。
         directRead()
 
+        backendQueue = Self.availableBackends()
         startHelper()
 
         // 轻量巡检：维持 hasNowPlaying（播放器开关），并在直读可用时保持同步。
@@ -203,6 +256,8 @@ class NowPlayingService: ObservableObject {
         upkeepTimer = nil
         pendingClearWorkItem?.cancel()
         pendingClearWorkItem = nil
+        artworkSettleWorkItem?.cancel()
+        artworkSettleWorkItem = nil
         stopHelper()
     }
 
@@ -257,26 +312,46 @@ class NowPlayingService: ObservableObject {
     // MARK: - 常驻 helper
 
     private func startHelper() {
-        guard helperProcess == nil,
-              let swiftURL = Self.helperSwiftURL,
-              let scriptURL = Self.helperScriptURL else {
-            // 没有可用工具链：保留播放控制，仅无法显示曲目信息。
+        guard helperProcess == nil else { return }
+        guard let backend = backendQueue.first else {
+            // 没有可用后端：保留播放控制，仅无法显示曲目信息。
             return
         }
+        launchHelper(backend)
+    }
 
-        do {
-            try Self.helperScript.write(to: scriptURL, atomically: true, encoding: .utf8)
-        } catch {
-            NSLog("⚠️ 无法写入 now playing helper 脚本: %@", error.localizedDescription)
-            return
+    private func launchHelper(_ backend: HelperBackend) {
+        let executable: URL
+        let arguments: [String]
+
+        switch backend {
+        case .perlAdapter:
+            guard let perl = Self.perlURL,
+                  let script = Self.adapterScriptURL,
+                  let framework = Self.adapterFrameworkURL else { return }
+            executable = perl
+            // --no-diff：每行都是完整快照，解析无需维护增量合并状态。
+            arguments = [script.path, framework.path, "stream", "--no-diff"]
+
+        case .swiftToolchain:
+            guard let swiftURL = Self.helperSwiftURL,
+                  let scriptURL = Self.helperScriptURL else { return }
+            do {
+                try Self.helperScript.write(to: scriptURL, atomically: true, encoding: .utf8)
+            } catch {
+                NSLog("⚠️ 无法写入 now playing helper 脚本: %@", error.localizedDescription)
+                return
+            }
+            executable = swiftURL
+            arguments = [scriptURL.path]
         }
 
         helperBuffer.reset()
 
         let proc = Process()
         let pipe = Pipe()
-        proc.executableURL = swiftURL
-        proc.arguments = [scriptURL.path]
+        proc.executableURL = executable
+        proc.arguments = arguments
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
 
@@ -287,7 +362,7 @@ class NowPlayingService: ObservableObject {
             guard !lines.isEmpty else { return }
             DispatchQueue.main.async {
                 for line in lines {
-                    self.handleHelperLine(line)
+                    self.handleHelperLine(line, backend: backend)
                 }
             }
         }
@@ -302,6 +377,7 @@ class NowPlayingService: ObservableObject {
         do {
             try proc.run()
             helperProcess = proc
+            helperStartDate = Date()
         } catch {
             NSLog("⚠️ 无法启动 now playing helper: %@", error.localizedDescription)
             helperProcess = nil
@@ -322,6 +398,14 @@ class NowPlayingService: ObservableObject {
         helperProcess = nil
         guard isObserving else { return }
 
+        // 启动后很快就退出说明这个后端在当前机器上跑不通，换下一个；
+        // 运行良久后的意外退出则视为偶发，同一后端延迟重启。
+        let uptime = Date().timeIntervalSince(helperStartDate)
+        if uptime < 5, !backendQueue.isEmpty {
+            backendQueue.removeFirst()
+        }
+        guard !backendQueue.isEmpty else { return }
+
         // helper 意外退出时延迟重启，避免异常情况下反复拉起进程。
         helperRestartWorkItem?.cancel()
         let restart = DispatchWorkItem { [weak self] in
@@ -333,8 +417,15 @@ class NowPlayingService: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: restart)
     }
 
-    private func handleHelperLine(_ line: Data) {
-        guard let snapshot = Self.parseSnapshot(line) else { return }
+    private func handleHelperLine(_ line: Data, backend: HelperBackend) {
+        let snapshot: NowPlayingSnapshot?
+        switch backend {
+        case .perlAdapter:
+            snapshot = Self.parseAdapterLine(line)
+        case .swiftToolchain:
+            snapshot = Self.parseSnapshot(line)
+        }
+        guard let snapshot else { return }
         apply(snapshot)
     }
 
@@ -406,10 +497,13 @@ class NowPlayingService: ObservableObject {
         let artist: String
         let playing: Bool
         let artworkData: Data?
-        /// 封面仍属于上一首曲目，尚不可信
+        /// 封面仍属于上一首曲目，尚不可信（swift 工具链 helper 会主动标记）
         var artworkStale: Bool = false
+        /// 播放器 bundle ID（perl adapter 后端直接提供）
+        var bundleIdentifier: String? = nil
     }
 
+    /// 解析 swift 工具链 helper 的输出行。
     private static func parseSnapshot(_ data: Data) -> NowPlayingSnapshot? {
         guard !data.isEmpty,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -425,11 +519,32 @@ class NowPlayingService: ObservableObject {
         )
     }
 
+    /// 解析 perl adapter 的输出行：{"type":"data","diff":false,"payload":{...}}。
+    /// 使用 --no-diff，payload 始终是完整快照；无音乐时 payload 为空字典。
+    private static func parseAdapterLine(_ data: Data) -> NowPlayingSnapshot? {
+        guard !data.isEmpty,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["type"] as? String == "data",
+              let payload = json["payload"] as? [String: Any] else {
+            return nil
+        }
+        return NowPlayingSnapshot(
+            pid: Int32(payload["processIdentifier"] as? Int ?? -1),
+            title: payload["title"] as? String ?? "",
+            artist: payload["artist"] as? String ?? "",
+            playing: payload["playing"] as? Bool ?? false,
+            artworkData: (payload["artworkData"] as? String).flatMap { Data(base64Encoded: $0) },
+            bundleIdentifier: payload["bundleIdentifier"] as? String
+        )
+    }
+
     private func apply(_ snapshot: NowPlayingSnapshot) {
         // 报告方不是已知播放器时，说明是系统里其他发声来源，不予采信。
-        if snapshot.pid > 0,
-           let app = NSRunningApplication(processIdentifier: snapshot.pid),
-           let bundleID = app.bundleIdentifier,
+        let reportedBundleID = snapshot.bundleIdentifier
+            ?? (snapshot.pid > 0
+                ? NSRunningApplication(processIdentifier: snapshot.pid)?.bundleIdentifier
+                : nil)
+        if let bundleID = reportedBundleID,
            !Self.musicBundleIDs.contains(bundleID),
            let expected = runningMusicApp?.bundleIdentifier,
            bundleID != expected {
@@ -454,15 +569,54 @@ class NowPlayingService: ObservableObject {
             isPlaying = snapshot.playing
         }
 
-        if snapshot.artworkStale {
-            // 宁可短暂显示占位图，也不要挂上一首歌的封面。
-            // helper 会在封面到达或确认无变化后补发。
+        applyArtwork(snapshot, trackChanged: trackChanged)
+    }
+
+    /// 封面归属判定。MediaRemote 常常先更新曲目、封面稍后才到：
+    /// 曲目刚换而封面字节与上一首完全相同时，先按"过期"处理不显示，
+    /// 1.5 秒后仍无新封面则认可它（同专辑连播、封面本来就一样的场景）。
+    private func applyArtwork(_ snapshot: NowPlayingSnapshot, trackChanged: Bool) {
+        let trackKey = "\(snapshot.title)|\(snapshot.artist)"
+        let fingerprint = snapshot.artworkData.map { "\($0.count)-\($0.hashValue)" }
+        defer {
+            lastAppliedTrackKey = trackKey
+            if fingerprint != nil {
+                lastAppliedArtworkFingerprint = fingerprint
+            }
+        }
+
+        var artworkStale = snapshot.artworkStale
+        if !artworkStale,
+           trackKey != lastAppliedTrackKey,
+           let fingerprint,
+           fingerprint == lastAppliedArtworkFingerprint {
+            artworkStale = true
+        }
+
+        if artworkStale, let artData = snapshot.artworkData {
             albumArt = nil
+            scheduleArtworkSettle(trackKey: trackKey, data: artData)
         } else if let artData = snapshot.artworkData {
+            artworkSettleWorkItem?.cancel()
+            artworkSettleWorkItem = nil
             albumArt = NSImage(data: artData)
         } else if trackChanged {
             albumArt = nil
         }
+    }
+
+    private func scheduleArtworkSettle(trackKey: String, data: Data) {
+        artworkSettleWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.artworkSettleWorkItem = nil
+            // 曲目没再变、也没有新封面顶掉它 → 这张封面确实属于当前曲目
+            guard "\(self.trackName)|\(self.artistName)" == trackKey,
+                  self.albumArt == nil else { return }
+            self.albumArt = NSImage(data: data)
+        }
+        artworkSettleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
     /// 元数据读空时延迟清理。切歌瞬间常有短暂空窗，立即清空会导致闪烁。
@@ -493,6 +647,10 @@ class NowPlayingService: ObservableObject {
 
     private func clearNowPlaying() {
         cancelPendingClear()
+        artworkSettleWorkItem?.cancel()
+        artworkSettleWorkItem = nil
+        lastAppliedTrackKey = ""
+        lastAppliedArtworkFingerprint = nil
         trackName = ""
         artistName = ""
         albumArt = nil

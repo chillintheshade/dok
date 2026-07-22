@@ -20,10 +20,19 @@ The installed development copy is `/Applications/Arcly.app`. Build successfully 
 - `Sources/Arcly/ArclyApp.swift`: lifecycle, hotkey, mouse trigger, status item, settings window.
 - `Sources/Arcly/ArclyWheelView.swift`: wheel layout, glass layers, center music UI.
 - `Sources/Arcly/ArclyWheelWindow.swift`: window placement, hit testing, launch and dismiss behavior.
-- `Sources/Arcly/NowPlayingService.swift`: MediaRemote metadata and control refresh.
+- `Sources/Arcly/NowPlayingService.swift`: now-playing state; resident helper backends and media-key controls.
 - `Sources/Arcly/SettingsView.swift`: fixed-size two-tab settings UI.
+- `Vendor/MediaRemoteAdapter/`: vendored BSD-3 framework sources + perl script (see its README). Built by the `MediaRemoteAdapter` target, embedded in the app, loaded at runtime by `/usr/bin/perl` — never linked.
 - `Resources/*lproj`: English and Simplified Chinese strings; UI follows macOS language.
 - `work/*-test.py`: source-contract regression suite.
+
+## Now Playing Backends (priority order)
+
+1. In-process direct MediaRemote read — instant, works only where macOS still allows it.
+2. `perlAdapter` — bundled `MediaRemoteAdapter.framework` run via the Apple-signed system perl. Works for every user, streams JSON lines (`stream --no-diff`).
+3. `swiftToolchain` — legacy script on a real CLT/Xcode Swift binary. Fallback only.
+
+A backend that exits within 5 seconds of launch is dropped from the queue; the next one is tried. Playback controls are system media keys and never depend on any backend.
 
 ## Project Rules
 
@@ -41,10 +50,10 @@ The installed development copy is `/Applications/Arcly.app`. Build successfully 
 
 - App version is 1.0.1; the local source and `/Applications/Arcly.app` include newer wheel and settings fixes.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
-- The `/usr/bin/swift` shim is forbidden. The optional music helper may run only with a real CLT/Xcode Swift binary; direct MediaRemote reading remains the primary path.
+- Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
+- The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - `dist/Arcly-1.0.1.dmg` is an older valid signed package and does not contain the current uncommitted fixes.
-- App Store copy under `docs/appstore/` must describe one free feature set with no in-app purchases.
 
 ## Next Release
 
-Refresh GitHub screenshots, choose an open-source license, build a new DMG, notarize it, verify on a clean Mac account, then publish a release.
+Build a new DMG, notarize it once a developer account is available, verify the perl adapter on a Mac without developer tools, then publish a release.

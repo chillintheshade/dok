@@ -14,6 +14,40 @@ settings:
     CURRENT_PROJECT_VERSION: "3"
 
 targets:
+  # BSD-3 vendored framework (Vendor/MediaRemoteAdapter).
+  # Loaded at runtime by /usr/bin/perl, never linked by the app itself.
+  MediaRemoteAdapter:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Vendor/MediaRemoteAdapter/src
+      - path: Vendor/MediaRemoteAdapter/include
+    dependencies:
+      - sdk: AppKit.framework
+      - sdk: ImageIO.framework
+      - sdk: UniformTypeIdentifiers.framework
+    settings:
+      base:
+        PRODUCT_NAME: MediaRemoteAdapter
+        PRODUCT_BUNDLE_IDENTIFIER: com.vandenbe.MediaRemoteAdapter
+        MARKETING_VERSION: "0.7.6"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: true
+        DEFINES_MODULE: false
+        SKIP_INSTALL: true
+        CLANG_ENABLE_OBJC_ARC: true
+        # Perl 通过 dlopen + dlsym 调用导出函数，符号必须保持可见。
+        GCC_SYMBOLS_PRIVATE_EXTERN: false
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Vendor/MediaRemoteAdapter/src"
+          - "$(SRCROOT)/Vendor/MediaRemoteAdapter/include"
+        USER_HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Vendor/MediaRemoteAdapter/src"
+          - "$(SRCROOT)/Vendor/MediaRemoteAdapter/include"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 9NDTK4FT92
+        SWIFT_EMIT_LOC_STRINGS: false
+
   Arcly:
     type: application
     platform: macOS
@@ -23,6 +57,12 @@ targets:
       - path: Resources/Assets.xcassets
       - path: Resources/en.lproj/Localizable.strings
       - path: Resources/zh-Hans.lproj/Localizable.strings
+      - path: Vendor/MediaRemoteAdapter/bin/mediaremote-adapter.pl
+        buildPhase: resources
+    dependencies:
+      - target: MediaRemoteAdapter
+        embed: true
+        link: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.qingshan.orbis

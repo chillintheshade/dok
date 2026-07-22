@@ -93,21 +93,9 @@ The bundle identifier still uses `com.qingshan.orbis` to preserve update compati
 
 ## Music Support / 音乐功能说明
 
-**Playback controls work on every Mac.** Previous, play/pause, and next are sent as system media keys, so they drive whichever player is active.
+**Everything works out of the box on every Mac — no developer tools required.** Playback controls are sent as system media keys. Track name and artwork are read through a bundled helper framework ([mediaremote-adapter](https://github.com/ungive/mediaremote-adapter), BSD-3-Clause) that runs on the system's Apple-signed Perl interpreter, which recent versions of macOS still allow to access Now Playing metadata.
 
-**播放控制在所有 Mac 上都可用。** 上一首、播放/暂停、下一首通过系统媒体按键发送，对当前活跃的播放器都有效。
-
-**Track name and artwork are another matter.** Recent versions of macOS only expose Now Playing metadata to Apple-signed processes. Arcly reads it through a helper that runs on the Swift toolchain, so the track name and artwork appear only on machines with Xcode or the Command Line Tools installed. Without them, the center shows a generic music placeholder — the playback controls still work.
-
-**歌名和封面则受系统限制。** 较新版本的 macOS 只向 Apple 签名的进程开放"正在播放"信息。Arcly 通过 Swift 工具链上的 helper 读取，因此歌名和封面只在装有 Xcode 或命令行工具（Command Line Tools）的机器上显示。没有安装时，中心区域显示通用的音乐占位图，播放控制不受影响。
-
-If you want the full display, install the toolchain with:
-
-如果需要完整显示，可以安装工具链：
-
-```bash
-xcode-select --install
-```
+**所有功能开箱即用，不需要安装任何开发工具。** 播放控制通过系统媒体按键发送；歌名和封面由打包在 App 内的 helper 框架（[mediaremote-adapter](https://github.com/ungive/mediaremote-adapter)，BSD-3-Clause 协议）读取——它借助系统自带、Apple 签名的 Perl 解释器运行，这是较新版本 macOS 上读取"正在播放"信息的可行途径。
 
 ## Notes / 说明
 
@@ -127,3 +115,7 @@ If Arcly matches the way you like to work on macOS, starring the repo helps more
 Arcly is released under the [GNU General Public License v3.0](LICENSE). You may use, modify, and redistribute it freely, provided that derivative works are also released under the GPL-3.0 with their source code available.
 
 Arcly 基于 [GNU General Public License v3.0](LICENSE) 发布。你可以自由使用、修改和再分发，但衍生作品同样需要以 GPL-3.0 开源并提供源码。
+
+Arcly bundles [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter) by Jonas van den Berg and contributors, licensed under the BSD 3-Clause License — see [Vendor/MediaRemoteAdapter/LICENSE](Vendor/MediaRemoteAdapter/LICENSE).
+
+Arcly 内置了 Jonas van den Berg 及贡献者开发的 [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter)（BSD 3-Clause 协议），协议全文见 [Vendor/MediaRemoteAdapter/LICENSE](Vendor/MediaRemoteAdapter/LICENSE)。

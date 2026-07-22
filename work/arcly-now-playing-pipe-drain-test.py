@@ -14,8 +14,8 @@ SOURCE = ROOT / "Sources" / "Arcly" / "NowPlayingService.swift"
 
 def main() -> None:
     source = SOURCE.read_text()
-    match = re.search(r"private func startHelper\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert match, "startHelper body not found"
+    match = re.search(r"private func launchHelper\(_ backend: HelperBackend\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert match, "launchHelper body not found"
     body = match.group("body")
 
     assert "readabilityHandler" in body, (
