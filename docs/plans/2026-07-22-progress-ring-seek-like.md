@@ -99,6 +99,19 @@ trackID/stationID/stationHash 的 userInfo 才能发送——上游源码里标�
    Local changes；UI 上在音乐控制器加心形按钮，仅当
    `supportsIsLiked == true` 时显示。
 
+### 验证结论（2026-07-22）
+
+已按上述流程对 QQ音乐 做无 UI 实测，结论为**放弃实现**：
+
+- 选取一首界面明确显示“添加到我喜欢”的未喜欢歌曲作为对照。
+- payload 只有 `contentItemIdentifier`，没有 `supportsIsLiked`、`isLiked`、
+  `radioStationIdentifier` 或 `radioStationHash`。
+- 临时探针向 `MRMediaRemoteSendCommand(0x6A, userInfo)` 传入当前歌曲 ID；API
+  返回 `true`，但两秒后 QQ音乐 仍显示“添加到我喜欢”，喜欢数量未变化，后续
+  payload 也没有出现喜欢状态。
+- 因此 `true` 只能证明系统命令入口接收了请求，不能证明 QQ音乐 执行了喜欢。
+  Arcly 不修改 vendor，也不添加无法可靠工作的心形按钮。
+
 ## 五、验收
 
 - `python3 work/*-test.py` 全过（新行为补契约测试，沿用现有测试的风格）。
@@ -107,3 +120,12 @@ trackID/stationID/stationHash 的 userInfo 才能发送——上游源码里标�
   暂停时环停住。swift 兜底路径（临时把 backendQueue 首项去掉模拟）下进度环
   隐藏、其余功能正常。
 - 设置窗口保持 920×520 两个 tab 不变；轮盘交互（选中、启动 App）零回归。
+
+## 六、进度显示稳定性补充（2026-07-22）
+
+- 进度环最终移至中心圆边界，只绘制已播放弧；未播放轨道、中心边界和头部圆点
+  在所有状态下都不绘制。
+- `playbackProgress(at:)` 对 helper 小于 `1.5s` 的双向偏差做渐进收敛：沿上次
+  已显示基准继续外推，每次只吸收 `8%` 差值，避免进度弧周期性前蹦或后退。
+- 差距达到 `1.5s`、切歌、暂停/恢复或 Arcly 发起 seek 时允许重置；切歌归零
+  和 seek 乐观冻结规则保持不变。

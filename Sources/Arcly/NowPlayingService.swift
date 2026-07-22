@@ -18,9 +18,15 @@ class NowPlayingService: ObservableObject {
     @Published var albumArt: NSImage? = nil
     @Published var isPlaying: Bool = false
     @Published var hasNowPlaying: Bool = false
+    @Published private(set) var duration: TimeInterval? = nil
+    @Published private(set) var elapsedTime: TimeInterval? = nil
+    @Published private(set) var progressTimestamp: Date? = nil
+    @Published private(set) var playbackRate: Double? = nil
+    @Published private(set) var canSeek: Bool = false
 
     private var isObserving = false
     private var helperProcess: Process?
+    private var seekProcesses: [Process] = []
     private var helperRestartWorkItem: DispatchWorkItem?
     private var helperStartDate: Date = .distantPast
     private let helperBuffer = LineBuffer()
@@ -29,6 +35,7 @@ class NowPlayingService: ObservableObject {
 
     /// 可用的 helper 后端，按优先级排列；快速失败的后端会被移出队列。
     private var backendQueue: [HelperBackend] = []
+    private var activeBackend: HelperBackend?
 
     /// 封面归属追踪：检测"曲目换了、封面还是上一首的"这种滞后。
     private var lastAppliedTrackKey: String = ""
@@ -37,6 +44,12 @@ class NowPlayingService: ObservableObject {
 
     /// 发送播放命令后短暂冻结，防止旧状态覆盖乐观更新
     private var playingFrozenUntil: Date = .distantPast
+    /// seek 后短暂保留乐观进度，避免 helper 尚未更新的旧采样点把进度拉回去。
+    private var progressFrozenUntil: Date = .distantPast
+    /// 视图实际显示过的播放位置。helper 的轻微滞后采样不得让它向后跳。
+    private var lastDisplayedElapsed: TimeInterval?
+    private var lastDisplayedAt: Date?
+    private let minorProgressRegressionTolerance: TimeInterval = 1.5
     /// 元数据短暂读空时不立刻清空，避免切歌瞬间闪烁
     private let staleClearDelay: TimeInterval = 2.5
 
@@ -86,7 +99,7 @@ class NowPlayingService: ObservableObject {
     ///    `com.apple.perl`）加载运行。所有 Mac 都可用，无需任何开发工具。
     /// 2. `swiftToolchain` —— 旧方案：把脚本交给 Swift 工具链解释执行。
     ///    仅在装有 Xcode/CLT 的机器上可用，作为 perl 路不通时的兜底。
-    private enum HelperBackend {
+    private enum HelperBackend: Equatable {
         case perlAdapter
         case swiftToolchain
     }
@@ -273,6 +286,7 @@ class NowPlayingService: ObservableObject {
     func togglePlayPause() {
         postSystemMediaKey(NX_KEYTYPE_PLAY)
         isPlaying.toggle()
+        resetDisplayedProgressTracking()
         playingFrozenUntil = Date().addingTimeInterval(1.5)
     }
 
@@ -284,6 +298,44 @@ class NowPlayingService: ObservableObject {
     func previousTrack() {
         postSystemMediaKey(NX_KEYTYPE_PREVIOUS)
         playingFrozenUntil = Date().addingTimeInterval(1.5)
+    }
+
+    /// 使用 perl adapter 的一次性命令跳转播放位置。Swift 兜底后端没有命令通道。
+    func seek(to seconds: TimeInterval) {
+        guard activeBackend == .perlAdapter,
+              canSeek,
+              let duration, duration > 0,
+              let perl = Self.perlURL,
+              let script = Self.adapterScriptURL,
+              let framework = Self.adapterFrameworkURL else { return }
+
+        let target = min(max(seconds, 0), duration)
+        let microseconds = Int64((target * 1_000_000).rounded())
+        let process = Process()
+        process.executableURL = perl
+        process.arguments = [script.path, framework.path, "seek", String(microseconds)]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] finishedProcess in
+            DispatchQueue.main.async {
+                self?.seekProcesses.removeAll { $0 === finishedProcess }
+            }
+        }
+
+        do {
+            try process.run()
+            seekProcesses.append(process)
+            let optimisticTimestamp = Date()
+            elapsedTime = target
+            progressTimestamp = optimisticTimestamp
+            if playbackRate == nil {
+                playbackRate = isPlaying ? 1 : 0
+            }
+            resetDisplayedProgress(to: target, at: optimisticTimestamp)
+            progressFrozenUntil = Date().addingTimeInterval(1.2)
+        } catch {
+            NSLog("⚠️ 无法发送 seek 命令: %@", error.localizedDescription)
+        }
     }
 
     private func postSystemMediaKey(_ keyType: Int32) {
@@ -378,9 +430,13 @@ class NowPlayingService: ObservableObject {
             try proc.run()
             helperProcess = proc
             helperStartDate = Date()
+            activeBackend = backend
+            canSeek = backend == .perlAdapter
         } catch {
             NSLog("⚠️ 无法启动 now playing helper: %@", error.localizedDescription)
             helperProcess = nil
+            activeBackend = nil
+            canSeek = false
         }
     }
 
@@ -392,10 +448,14 @@ class NowPlayingService: ObservableObject {
             proc.terminate()
         }
         helperProcess = nil
+        activeBackend = nil
+        canSeek = false
     }
 
     private func helperDidTerminate() {
         helperProcess = nil
+        activeBackend = nil
+        canSeek = false
         guard isObserving else { return }
 
         // 启动后很快就退出说明这个后端在当前机器上跑不通，换下一个；
@@ -497,6 +557,10 @@ class NowPlayingService: ObservableObject {
         let artist: String
         let playing: Bool
         let artworkData: Data?
+        var duration: TimeInterval? = nil
+        var elapsedTime: TimeInterval? = nil
+        var timestamp: Date? = nil
+        var playbackRate: Double? = nil
         /// 封面仍属于上一首曲目，尚不可信（swift 工具链 helper 会主动标记）
         var artworkStale: Bool = false
         /// 播放器 bundle ID（perl adapter 后端直接提供）
@@ -534,8 +598,83 @@ class NowPlayingService: ObservableObject {
             artist: payload["artist"] as? String ?? "",
             playing: payload["playing"] as? Bool ?? false,
             artworkData: (payload["artworkData"] as? String).flatMap { Data(base64Encoded: $0) },
+            duration: number(payload["duration"]),
+            elapsedTime: number(payload["elapsedTime"]),
+            timestamp: (payload["timestamp"] as? String).flatMap(parseISO8601Date),
+            playbackRate: number(payload["playbackRate"]),
             bundleIdentifier: payload["bundleIdentifier"] as? String
         )
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        (value as? NSNumber)?.doubleValue
+    }
+
+    private static func parseISO8601Date(_ value: String) -> Date? {
+        ISO8601DateFormatter().date(from: value)
+    }
+
+    /// 基于后端提供的采样点外推播放位置。视图层可高频调用，不会触发状态发布。
+    func estimatedElapsedTime(at now: Date = Date()) -> TimeInterval? {
+        guard let duration, duration > 0,
+              let elapsedTime else { return nil }
+
+        var estimated = elapsedTime
+        if isPlaying,
+           let progressTimestamp,
+           let playbackRate,
+           playbackRate > 0 {
+            estimated += max(0, now.timeIntervalSince(progressTimestamp)) * playbackRate
+        }
+        return min(max(estimated, 0), duration)
+    }
+
+    func playbackProgress(at now: Date = Date()) -> Double? {
+        guard let duration, duration > 0,
+              let candidate = estimatedElapsedTime(at: now) else { return nil }
+        let elapsed = monotonicDisplayedElapsed(candidate: candidate, duration: duration, at: now)
+        return min(max(elapsed / duration, 0), 1)
+    }
+
+    private func monotonicDisplayedElapsed(
+        candidate: TimeInterval,
+        duration: TimeInterval,
+        at now: Date
+    ) -> TimeInterval {
+        let clampedCandidate = min(max(candidate, 0), duration)
+        guard let lastDisplayedElapsed, let lastDisplayedAt else {
+            resetDisplayedProgress(to: clampedCandidate, at: now)
+            return clampedCandidate
+        }
+
+        let elapsedSinceDisplay = max(0, now.timeIntervalSince(lastDisplayedAt))
+        let displayRate = isPlaying ? max(playbackRate ?? 1, 0) : 0
+        let continuedDisplayedElapsed = min(
+            max(lastDisplayedElapsed + elapsedSinceDisplay * displayRate, 0),
+            duration
+        )
+        let diff = clampedCandidate - continuedDisplayedElapsed
+        let displayedElapsed: TimeInterval
+        if abs(diff) < minorProgressRegressionTolerance {
+            displayedElapsed = continuedDisplayedElapsed + diff * 0.08
+        } else {
+            displayedElapsed = clampedCandidate
+        }
+
+        resetDisplayedProgress(to: displayedElapsed, at: now)
+        return displayedElapsed
+    }
+
+    private func resetDisplayedProgress(
+        to elapsed: TimeInterval? = nil,
+        at date: Date? = nil
+    ) {
+        lastDisplayedElapsed = elapsed
+        lastDisplayedAt = elapsed == nil ? nil : (date ?? Date())
+    }
+
+    private func resetDisplayedProgressTracking() {
+        resetDisplayedProgress()
     }
 
     private func apply(_ snapshot: NowPlayingSnapshot) {
@@ -560,16 +699,47 @@ class NowPlayingService: ObservableObject {
         cancelPendingClear()
 
         let trackChanged = trackName != snapshot.title
+        if trackChanged {
+            clearProgress()
+        }
         trackName = snapshot.title
         artistName = snapshot.artist
         hasNowPlaying = true
 
         // 冻结期内不覆盖 isPlaying，防止命令刚发出就被旧状态回弹
         if Date() > playingFrozenUntil {
+            let playbackStateChanged = isPlaying != snapshot.playing
             isPlaying = snapshot.playing
+            if playbackStateChanged {
+                resetDisplayedProgressTracking()
+            }
         }
 
+        applyProgress(snapshot, trackChanged: trackChanged)
         applyArtwork(snapshot, trackChanged: trackChanged)
+    }
+
+    private func applyProgress(_ snapshot: NowPlayingSnapshot, trackChanged: Bool) {
+        guard trackChanged || Date() >= progressFrozenUntil else { return }
+
+        guard let duration = snapshot.duration, duration > 0,
+              let elapsedTime = snapshot.elapsedTime else {
+            clearProgress()
+            return
+        }
+
+        self.duration = duration
+        self.elapsedTime = min(max(elapsedTime, 0), duration)
+        progressTimestamp = snapshot.timestamp
+        playbackRate = snapshot.playbackRate
+    }
+
+    private func clearProgress() {
+        duration = nil
+        elapsedTime = nil
+        progressTimestamp = nil
+        playbackRate = nil
+        resetDisplayedProgressTracking()
     }
 
     /// 封面归属判定。MediaRemote 常常先更新曲目、封面稍后才到：
@@ -654,6 +824,7 @@ class NowPlayingService: ObservableObject {
         trackName = ""
         artistName = ""
         albumArt = nil
+        clearProgress()
         if Date() > playingFrozenUntil {
             isPlaying = false
         }

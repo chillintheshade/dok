@@ -49,6 +49,17 @@ struct DonutShape: Shape {
 
 // MARK: - Native Glass Sampling
 
+enum ArclyGlassMaterial {
+    static let tintBase: Double = 0.03
+    static let tintRange: Double = 0.14
+    static let minimumMenuOpacity: Double = 0.15
+
+    static func intensity(for menuOpacity: Double) -> Double {
+        let clamped = min(max(menuOpacity, minimumMenuOpacity), 1)
+        return (clamped - minimumMenuOpacity) / (1 - minimumMenuOpacity)
+    }
+}
+
 struct NativeGlassSamplingLayer: NSViewRepresentable {
     let cornerRadius: CGFloat
     let intensity: Double
@@ -71,7 +82,7 @@ struct NativeGlassSamplingLayer: NSViewRepresentable {
         // matching Control Center instead of fading the entire glass surface.
         glass.alphaValue = 1
         glass.tintColor = NSColor.black.withAlphaComponent(
-            CGFloat(0.12 + clampedIntensity * 0.14)
+            CGFloat(ArclyGlassMaterial.tintBase + clampedIntensity * ArclyGlassMaterial.tintRange)
         )
         glass.clipsToBounds = true
         glass.layer?.cornerRadius = cornerRadius
@@ -80,102 +91,31 @@ struct NativeGlassSamplingLayer: NSViewRepresentable {
     }
 }
 
-struct ControlCenterGlassToneLayer: View {
-    let diameter: CGFloat
-    let intensity: Double
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let strength = min(max(intensity, 0), 1)
-
-        ZStack {
-            Circle()
-                .fill(
-                    colorScheme == .dark
-                        ? Color.black.opacity(0.07 + 0.05 * strength)
-                        : Color.black.opacity(0.045 + 0.04 * strength)
-                )
-
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.10 * strength),
-                            Color.clear,
-                            Color.black.opacity(0.08 * strength)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .blendMode(.softLight)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        stops: [
-                            .init(color: .clear, location: 0.64),
-                            .init(color: Color.black.opacity(0.055 * strength), location: 1)
-                        ],
-                        center: .center,
-                        startRadius: diameter * 0.18,
-                        endRadius: diameter * 0.52
-                    )
-                )
-                .blendMode(.multiply)
-        }
-        .frame(width: diameter, height: diameter)
-        .allowsHitTesting(false)
-    }
-}
-
 struct ControlCenterGlassEdgeLayer: View {
     let diameter: CGFloat
     let centerDiameter: CGFloat
     let intensity: Double
 
+    init(
+        diameter: CGFloat,
+        centerDiameter: CGFloat,
+        intensity: Double
+    ) {
+        self.diameter = diameter
+        self.centerDiameter = centerDiameter
+        self.intensity = intensity
+    }
+
     var body: some View {
         let strength = min(max(intensity, 0), 1)
 
         ZStack {
             Circle()
-                .fill(Color.black.opacity(0.001))
-                .frame(width: diameter - 4, height: diameter - 4)
-                .shadow(color: Color.black.opacity(0.16 * strength), radius: 15, x: 0, y: 8)
-
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.52 * strength),
-                            Color.white.opacity(0.16 * strength),
-                            Color.black.opacity(0.10 * strength),
-                            Color.white.opacity(0.28 * strength)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.05
-                )
-                .frame(width: diameter - 2, height: diameter - 2)
+                .stroke(Color.white.opacity(0.24 * strength), lineWidth: 0.55)
+                .frame(width: diameter - 1, height: diameter - 1)
 
             Circle()
                 .fill(Color.primary.opacity(0.018 * strength))
-                .frame(width: centerDiameter, height: centerDiameter)
-
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.24 * strength),
-                            Color.black.opacity(0.06 * strength)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.9
-                )
                 .frame(width: centerDiameter, height: centerDiameter)
         }
         .frame(width: diameter, height: diameter)
@@ -263,12 +203,8 @@ struct ArclyWheelView: View {
     private var center: CGFloat { Self.windowSize / 2 }
     private var wheelDiameter: CGFloat { outerRadius * 2 }
     private var iconSize: CGFloat { appState.settings.iconSize }
-    private var menuGlassOpacity: Double {
-        min(max(appState.settings.menuOpacity, 0.15), 1.0)
-    }
     private var glassMaterialIntensity: Double {
-        let normalized = (menuGlassOpacity - 0.15) / 0.85
-        return 0.32 + normalized * 0.68
+        ArclyGlassMaterial.intensity(for: appState.settings.menuOpacity)
     }
     private var centerLensRadius: CGFloat {
         let maxRadiusBeforeIcons = iconOrbitRadius - iconSize / 2 - 10
@@ -286,6 +222,10 @@ struct ArclyWheelView: View {
     private var musicArtworkBaseSize: CGFloat { 58 }
     private var musicArtworkSize: CGFloat { musicArtworkBaseSize * centerMusicControlScale }
     private var musicArtworkCornerRadius: CGFloat { 12 }
+    private var musicProgressDiameter: CGFloat { centerLensRadius * 2 }
+    private var musicProgressLineWidth: CGFloat {
+        min(max(0.9 * centerMusicControlScale, 0.9), 1.0)
+    }
     private var musicTitleFontSize: CGFloat { 11.5 * centerMusicControlScale }
     private var musicSecondaryControlSize: CGFloat { 15 * centerMusicControlScale }
     private var musicPrimaryControlSize: CGFloat { 22 * centerMusicControlScale }
@@ -293,6 +233,11 @@ struct ArclyWheelView: View {
     private var musicVerticalGap: CGFloat { 8 * centerMusicControlScale }
     private var musicControllerWidth: CGFloat {
         min(min(max(iconOrbitRadius * 1.28, 142), 230), max(centerLensRadius * 2 - 18, 96))
+    }
+    private var showsMusicController: Bool {
+        appState.selectedIndex == nil
+            && nowPlaying.hasNowPlaying
+            && appState.settings.showMusicControl
     }
 
     private var sliceAngleDeg: Double {
@@ -341,6 +286,7 @@ struct ArclyWheelView: View {
     private var animatedWheelLayers: some View {
         ZStack {
             selectedWedgeLayer
+            musicProgressBoundaryLayer
             centerContent
             iconsLayer
         }
@@ -351,10 +297,7 @@ struct ArclyWheelView: View {
     }
 
     private var materialOverlayLayers: some View {
-        ZStack {
-            glassToneMappingLayer
-            glassEdgeHighlightLayer
-        }
+        glassEdgeHighlightLayer
         .compositingGroup()
         .allowsHitTesting(false)
     }
@@ -368,16 +311,7 @@ struct ArclyWheelView: View {
             intensity: glassMaterialIntensity
         )
             .frame(width: wheelDiameter, height: wheelDiameter)
-            .clipShape(Circle())
             .allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private var glassToneMappingLayer: some View {
-        ControlCenterGlassToneLayer(
-            diameter: wheelDiameter,
-            intensity: glassMaterialIntensity
-        )
     }
 
     @ViewBuilder
@@ -474,6 +408,29 @@ struct ArclyWheelView: View {
 
     // MARK: - Center Content
 
+    @ViewBuilder
+    private var musicProgressBoundaryLayer: some View {
+        if showsMusicController, nowPlaying.duration != nil {
+            TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                if let progress = nowPlaying.playbackProgress(at: context.date) {
+                    musicProgressBoundary(progress: progress)
+                }
+            }
+        }
+    }
+
+    private func musicProgressBoundary(progress: Double) -> some View {
+        Circle()
+            .trim(from: 0, to: progress)
+            .stroke(
+                Color.primary.opacity(0.28),
+                style: StrokeStyle(lineWidth: musicProgressLineWidth, lineCap: .round)
+            )
+            .rotationEffect(.degrees(-90))
+            .frame(width: musicProgressDiameter, height: musicProgressDiameter)
+            .allowsHitTesting(false)
+    }
+
     private var selectedAppName: String {
         if let index = appState.selectedIndex, index < appState.settings.apps.count {
             return appState.settings.apps[index].displayName
@@ -538,23 +495,7 @@ struct ArclyWheelView: View {
         VStack(spacing: 0) {
             Spacer().frame(height: musicVerticalGap)
 
-            // 专辑封面
-            if let art = nowPlaying.albumArt {
-                Image(nsImage: art)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: musicArtworkSize, height: musicArtworkSize)
-                    .clipShape(RoundedRectangle(cornerRadius: musicArtworkCornerRadius, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: musicArtworkCornerRadius, style: .continuous)
-                    .fill(.quaternary)
-                    .frame(width: musicArtworkSize, height: musicArtworkSize)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 24 * centerMusicControlScale, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                    )
-            }
+            musicArtwork
 
             Spacer().frame(height: musicVerticalGap * 0.75)
 
@@ -599,6 +540,28 @@ struct ArclyWheelView: View {
                 .foregroundStyle(.quaternary)
         }
         .allowsHitTesting(false)
+    }
+
+    private var musicArtwork: some View {
+        ZStack {
+            if let art = nowPlaying.albumArt {
+                Image(nsImage: art)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: musicArtworkSize, height: musicArtworkSize)
+                    .clipShape(RoundedRectangle(cornerRadius: musicArtworkCornerRadius, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: musicArtworkCornerRadius, style: .continuous)
+                    .fill(.quaternary)
+                    .frame(width: musicArtworkSize, height: musicArtworkSize)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 24 * centerMusicControlScale, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                    )
+            }
+        }
+        .frame(width: musicArtworkSize, height: musicArtworkSize)
     }
 
     // MARK: - Selection

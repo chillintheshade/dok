@@ -3,6 +3,25 @@ import AppKit
 import QuartzCore
 import AVFoundation
 
+struct MusicProgressRingGeometry {
+    /// 把 AppKit 的 y 轴向上坐标映射到 SwiftUI 从顶部顺时针绘制的进度比例。
+    static func fraction(
+        dx: CGFloat,
+        dy: CGFloat,
+        centerYOffset: CGFloat,
+        radius: CGFloat,
+        tolerance: CGFloat
+    ) -> Double? {
+        let relativeY = dy - centerYOffset
+        let distance = hypot(dx, relativeY)
+        guard abs(distance - radius) <= tolerance else { return nil }
+
+        var angle = atan2(dx, relativeY)
+        if angle < 0 { angle += 2 * .pi }
+        return Double(angle / (2 * .pi))
+    }
+}
+
 // MARK: - 拖放目标视图
 
 class DropTargetHostingView<Content: View>: NSHostingView<Content> {
@@ -55,12 +74,14 @@ class ArclyWheelWindow: NSWindow {
         let availableScale = (centerLensRadius * 2 - 18) / 142
         return min(radiusScale, max(0.68, availableScale))
     }
+    private var musicProgressRingHitTolerance: CGFloat { 6 * centerMusicControlScale }
 
     private enum CenterClickAction {
         case openSettings
         case previousTrack
         case togglePlayPause
         case nextTrack
+        case seek(to: TimeInterval)
     }
 
     // AVAudioPlayer 预缓冲，play() 近乎零延迟
@@ -207,6 +228,8 @@ class ArclyWheelWindow: NSWindow {
                     np.togglePlayPause()
                 case .nextTrack:
                     np.nextTrack()
+                case .seek(let seconds):
+                    np.seek(to: seconds)
                 }
                 return nil
             }
@@ -267,7 +290,8 @@ class ArclyWheelWindow: NSWindow {
         let outerRadius = appState.settings.menuRadius + 50
 
         let newIndex: Int?
-        if isInsideCenterControls(dx: dx, dy: dy, distance: distance)
+        if seekFraction(dx: dx, dy: dy) != nil
+            || isInsideCenterControls(dx: dx, dy: dy, distance: distance)
             || distance < innerRadius || distance > outerRadius {
             newIndex = nil
         } else {
@@ -407,9 +431,13 @@ class ArclyWheelWindow: NSWindow {
     }
 
     private func centerClickAction(dx: CGFloat, dy: CGFloat, distance: CGFloat) -> CenterClickAction? {
-        guard isInsideCenterControls(dx: dx, dy: dy, distance: distance) else { return nil }
-
         if appState.nowPlaying.hasNowPlaying && appState.settings.showMusicControl {
+            if let fraction = seekFraction(dx: dx, dy: dy),
+               let duration = appState.nowPlaying.duration {
+                return .seek(to: duration * fraction)
+            }
+
+            guard isInsideCenterControls(dx: dx, dy: dy, distance: distance) else { return nil }
             let scale = centerMusicControlScale
             if abs(dx) <= 34 * scale && dy >= -96 * scale && dy <= -50 * scale {
                 return .openSettings
@@ -424,7 +452,24 @@ class ArclyWheelWindow: NSWindow {
             return nil
         }
 
+        guard isInsideCenterControls(dx: dx, dy: dy, distance: distance) else { return nil }
         return .openSettings
+    }
+
+    private func seekFraction(dx: CGFloat, dy: CGFloat) -> Double? {
+        let nowPlaying = appState.nowPlaying
+        guard nowPlaying.hasNowPlaying,
+              appState.settings.showMusicControl,
+              nowPlaying.canSeek,
+              nowPlaying.duration != nil else { return nil }
+
+        return MusicProgressRingGeometry.fraction(
+            dx: dx,
+            dy: dy,
+            centerYOffset: 0,
+            radius: centerLensRadius,
+            tolerance: musicProgressRingHitTolerance
+        )
     }
 
     func activateSelected() {

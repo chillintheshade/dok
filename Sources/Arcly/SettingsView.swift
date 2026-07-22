@@ -160,12 +160,8 @@ struct AppsSettingsView: View {
     private var center: CGFloat { pieSize / 2 }
     private var wheelDiameter: CGFloat { outerRadius * 2 }
     private var iconSize: CGFloat { appState.settings.iconSize * scale }
-    private var menuGlassOpacity: Double {
-        min(max(appState.settings.menuOpacity, 0.15), 1.0)
-    }
     private var glassMaterialIntensity: Double {
-        let normalized = (menuGlassOpacity - 0.15) / 0.85
-        return 0.32 + normalized * 0.68
+        ArclyGlassMaterial.intensity(for: appState.settings.menuOpacity)
     }
 
     var body: some View {
@@ -330,20 +326,10 @@ struct AppsSettingsView: View {
         ZStack {
             NativeGlassSamplingLayer(cornerRadius: outerRadius, intensity: glassMaterialIntensity)
                 .frame(width: wheelDiameter, height: wheelDiameter)
-                .clipShape(Circle())
                 .allowsHitTesting(false)
-            settingsGlassToneMappingLayer
             settingsGlassEdgeHighlightLayer
             centerLabel
         }
-    }
-
-    @ViewBuilder
-    private var settingsGlassToneMappingLayer: some View {
-        ControlCenterGlassToneLayer(
-            diameter: wheelDiameter,
-            intensity: glassMaterialIntensity
-        )
     }
 
     @ViewBuilder
