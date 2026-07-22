@@ -32,7 +32,7 @@ The installed development copy is `/Applications/Arcly.app`. Build successfully 
 2. `perlAdapter` — bundled `MediaRemoteAdapter.framework` run via the Apple-signed system perl. Works for every user, streams JSON lines (`stream --no-diff`).
 3. `swiftToolchain` — legacy script on a real CLT/Xcode Swift binary. Fallback only.
 
-A backend that exits within 5 seconds of launch is dropped from the queue; the next one is tried. Playback controls are system media keys and never depend on any backend.
+A backend that exits within 5 seconds of launch is dropped from the queue; the next one is tried. When the perl adapter is active, playback controls use its one-shot MediaRemote `send` command; system media keys are fallback only. Placeholder play records a 12-second, bundle-targeted intent and brings the preferred running player to the foreground; the perl helper consumes the intent once that player exposes a controllable session. This preserves explicit player selection while preventing an ownerless media key from launching Apple Music.
 
 ## Project Rules
 

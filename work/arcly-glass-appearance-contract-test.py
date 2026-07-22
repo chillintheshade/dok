@@ -20,6 +20,12 @@ def forbid(source: str, needle: str, reason: str) -> None:
         raise AssertionError(f"Forbidden {reason}: {needle}")
 
 
+def require_ordered(source: str, needles: list[str], reason: str) -> None:
+    positions = [source.find(needle) for needle in needles]
+    if -1 in positions or positions != sorted(positions):
+        raise AssertionError(f"Invalid {reason}: {needles}")
+
+
 def main() -> None:
     app_state = APP_STATE.read_text()
     app_source = APP_SOURCE.read_text()
@@ -107,9 +113,12 @@ def main() -> None:
     forbid(settings_view, "settingsGlassToneMappingLayer", "removed settings tone overlay")
 
     window_requirements = [
-        ("self.alphaValue = 1", "window always presents native glass at its final density"),
+        ("self.alphaValue = MenuMotion.windowWarmupAlpha", "window hides the cached first glass frame without suspending sampling"),
         ("self.displayIfNeeded()", "window forces the native glass composition before reveal"),
         ("self.orderFrontRegardless()", "wheel can present in the desktop-only Space without activating another app"),
+        ("deadline: .now() + MenuMotion.glassSamplerWarmupDelay", "native glass gets one frame to settle before reveal"),
+        ("context.duration = MenuMotion.windowRevealDuration", "window uses a short native fade after warmup"),
+        ("self.animator().alphaValue = 1", "window reveal reaches final material density"),
         (".stationary", "wheel is not displaced by desktop window management"),
         (".ignoresCycle", "wheel remains outside normal app window cycling"),
         ("self.ignoresMouseEvents = true", "hidden warm window cannot intercept pointer input"),
@@ -120,6 +129,35 @@ def main() -> None:
     for needle, reason in window_requirements:
         require(wheel_window, needle, reason)
 
+    show_at = wheel_window.split("func showAt(point: NSPoint) {", 1)[1].split(
+        "private func installEventMonitors()", 1
+    )[0]
+    require_ordered(
+        show_at,
+        [
+            "self.alphaValue = MenuMotion.windowWarmupAlpha",
+            "self.orderFrontRegardless()",
+            "self.animator().alphaValue = 1",
+            "revealWorkItem = reveal",
+            "deadline: .now() + MenuMotion.glassSamplerWarmupDelay",
+        ],
+        "warmup, order-front, delayed reveal sequence",
+    )
+
+    dismiss = wheel_window.split("func dismiss() {", 1)[1].split(
+        "func dismissForSettings()", 1
+    )[0]
+    require_ordered(
+        dismiss,
+        [
+            "revealWorkItem?.cancel()",
+            "animator().alphaValue = MenuMotion.windowWarmupAlpha",
+            "self.orderOut(nil)",
+            "self.alphaValue = 1",
+        ],
+        "dismiss cancellation, fade, order-out, alpha reset sequence",
+    )
+
     app_requirements = [
         ("if let existing = wheelWindow", "wheel window is reused across presentations"),
         ("window = existing", "existing native glass hierarchy is retained"),
@@ -128,7 +166,6 @@ def main() -> None:
     for needle, reason in app_requirements:
         require(app_source, needle, reason)
 
-    forbid(wheel_window, "self.animator().alphaValue", "whole-window alpha animation that changes glass density")
     forbid(wheel_window, "warmAlpha", "persistent near-transparent screen-saver-level window")
 
     print("Glass appearance contract passed.")

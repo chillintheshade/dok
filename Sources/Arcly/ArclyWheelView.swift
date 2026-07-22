@@ -142,6 +142,9 @@ enum MenuMotion {
     static let contentAppearDuration: Double = 0.11
     static let contentDismissDuration: Double = 0.08
     static let dismissOrderOutDelay: Double = 0.09
+    static let glassSamplerWarmupDelay: Double = 0.024
+    static let windowRevealDuration: Double = 0.12
+    static let windowWarmupAlpha: CGFloat = 0.01
     static let iconFocusResponse: Double = 0.18
     static let centerSwapResponse: Double = 0.16
 
@@ -194,10 +197,11 @@ enum RecentAppSatelliteGeometry {
         mainIconSize: CGFloat
     ) -> [CGPoint] {
         let angles: [CGFloat]
-        switch min(max(count, 0), 3) {
+        switch min(max(count, 0), 4) {
         case 1: angles = [90]
         case 2: angles = [78, 102]
-        case 3: angles = [72, 90, 108]
+        case 3: angles = [70, 90, 110]
+        case 4: angles = [63, 81, 99, 117]
         default: return []
         }
 
@@ -477,6 +481,14 @@ struct ArclyWheelView: View {
                 .background(.regularMaterial, in: Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.32), lineWidth: 0.5))
                 .offset(x: baseDiameter * 0.31, y: baseDiameter * 0.31)
+
+            if app.isRunning {
+                Circle()
+                    .fill(.primary)
+                    .frame(width: 4, height: 4)
+                    .opacity(0.85)
+                    .offset(y: baseDiameter / 2 + 5)
+            }
         }
         .frame(width: baseDiameter, height: baseDiameter)
         .scaleEffect(isSelected ? 1.08 : 1)

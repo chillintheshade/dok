@@ -22,7 +22,14 @@
      脚本内容内嵌在 `NowPlayingService.helperScript`，与
      `Sources/Helper/mr_info.swift` 逐字同步（有契约测试锁定）。
    - 后端启动后 5 秒内退出视为不可用，自动切下一个。
-3. **播放控制**走系统媒体按键（`postSystemMediaKey`），与后端无关，勿改。
+3. **播放控制路由**：perl adapter 活跃时，播放/下一首/上一首分别走一次性
+   `send 2/4/5` 命令；adapter 不可用时才退回系统媒体按键。原因是无 Now Playing
+   会话所有者时，系统媒体按键会启动默认的 Apple Music。仅因播放器运行而显示的
+   占位控制器不立即发送媒体命令，也不激活播放器窗口：播放键只记录一个约 12 秒、
+   按 bundle ID 定向的 pending intent；目标播放器随后出现可控会话时，由 perl
+   adapter 恰好补发一次 `send 2`。若 payload 已是 playing，则只消费意图，避免反向
+   暂停。上一首/下一首不响应。目标播放器优先级为 MediaRemote 会话所有者 → 最近
+   激活的已知播放器 → 现有兜底顺序。
 4. **封面滞后判定**在 App 侧（`applyArtwork`）：曲目变了但封面字节没变 → 视为
    上一首的封面，暂显占位，1.5 秒后无新封面则认可。
 5. 内购层已全部删除；项目 GPL-3.0；vendor 目录 BSD-3 且**保持逐字**（唯一

@@ -18,7 +18,11 @@ def main() -> None:
 
     assert "func playbackProgress(at now: Date = Date()) -> Double?" in SERVICE
     assert "now.timeIntervalSince(progressTimestamp)" in SERVICE
-    assert "if trackChanged {\n            clearProgress()" in SERVICE
+    track_changed_block = SERVICE.split("let trackChanged = trackName != snapshot.title", 1)[1].split(
+        "trackName = snapshot.title", 1
+    )[0]
+    assert "if trackChanged" in track_changed_block
+    assert "clearProgress()" in track_changed_block
     assert "clearProgress()\n        applyArtwork" not in SERVICE, (
         "progress must be applied from the new snapshot before artwork handling"
     )

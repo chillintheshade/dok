@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""最近应用卫星的持久化、快照、布局与交互契约。"""
+"""最近应用卫星的持久化、快照、布局、状态与交互契约。"""
 from pathlib import Path
 
 
@@ -17,15 +17,20 @@ def main() -> None:
     state_requirements = [
         ("var recentApps: [AppItem] = []", "persisted MRU list"),
         ("var recentAppCount: Int = 2", "default satellite count"),
+        ("var showRecentApps: Bool = true", "independent visibility setting"),
         ("forKey: .recentApps", "tolerant MRU decoding"),
         ("forKey: .recentAppCount", "tolerant count decoding"),
+        ("forKey: .showRecentApps", "tolerant visibility decoding"),
+        ("decodedRecentAppCount != 0", "legacy zero-count migration"),
         ("prefix(10)", "ten-entry MRU cap"),
         ("NSWorkspace.didActivateApplicationNotification", "workspace activation tracking"),
         ("$0.bundleIdentifier != bundleIdentifier", "MRU de-duplication"),
         ("item.bundleIdentifier != ownBundleIdentifier", "Arcly exclusion"),
         ("!fixedBundleIdentifiers.contains(item.bundleIdentifier)", "fixed-slot exclusion"),
         ("func snapshotRecentApps()", "presentation snapshot"),
-        ("recentAppSnapshot = Array(eligible.prefix(settings.recentAppCount))", "count-limited snapshot"),
+        ("settings.showRecentApps", "visibility-gated snapshot"),
+        ("Array(eligible.prefix(settings.recentAppCount))", "count-limited snapshot"),
+        ("recentActivatedBundleIdentifiers", "shared activation MRU for player routing"),
     ]
     for needle, description in state_requirements:
         assert needle in STATE, f"missing {description}"
@@ -33,12 +38,17 @@ def main() -> None:
     view_requirements = [
         ("enum RecentAppSatelliteGeometry", "shared satellite geometry"),
         ("static let iconScale: CGFloat = 0.75", "three-quarter icon scale"),
+        ("switch min(max(count, 0), 4)", "four-satellite cap"),
         ("case 1: angles = [90]", "single centered satellite"),
         ("case 2: angles = [78, 102]", "symmetric two-satellite arc"),
-        ("case 3: angles = [72, 90, 108]", "symmetric three-satellite arc"),
+        ("case 3: angles = [70, 90, 110]", "wider symmetric three-satellite arc"),
+        ("case 4: angles = [63, 81, 99, 117]", "wider symmetric four-satellite arc"),
+        ("let orbit = outerRadius + edgeGap", "single circular orbit"),
         ("recentAppSatellitesLayer", "satellite view layer"),
         ("NativeGlassSamplingLayer(", "native glass satellite base"),
         ('Image(systemName: "clock.fill")', "recent-app clock badge"),
+        ("if app.isRunning", "running-state indicator gate"),
+        (".fill(.primary)", "running black/primary dot"),
         ("appState.selectedRecentAppIndex == index", "satellite selection feedback"),
         ("static let windowSize: CGFloat = 640", "unclipped max-radius satellite window"),
     ]
@@ -60,8 +70,10 @@ def main() -> None:
     assert APP.count("wheelWindow?.selectedAppForActivation()") == 2, (
         "mouse and keyboard hold release must both activate satellites"
     )
+    assert '$appState.settings.showRecentApps' in SETTINGS
     assert '$appState.settings.recentAppCount' in SETTINGS
-    assert 'ForEach(0...3, id: \\.self)' in SETTINGS
+    assert 'ForEach(1...4, id: \.self)' in SETTINGS
+    assert '.disabled(!appState.settings.showRecentApps)' in SETTINGS
     assert 'Loc.string("settings.recentApps")' in SETTINGS
     assert '"settings.recentApps" = "Recent Apps";' in EN
     assert '"settings.recentApps" = "最近应用";' in ZH

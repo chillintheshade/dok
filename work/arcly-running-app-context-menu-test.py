@@ -13,7 +13,9 @@ ZH = (ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings").read_text()
 def main() -> None:
     requirements = [
         ("self?.handleRightClick(event)", "local right-click routing"),
-        ("slotIndex(at: NSEvent.mouseLocation)", "shared slot hit testing"),
+        ("let recentIndex = satelliteIndex(at: screenPoint)", "satellite hit testing first"),
+        ("recentIndex == nil ? slotIndex(at: screenPoint) : nil", "fixed-slot fallback"),
+        ("appState.recentAppSnapshot[recentIndex]", "satellite context target"),
         ("app.itemType == .app", "file and folder exclusion"),
         ("app.isRunning", "running-app gate"),
         ("let menu = NSMenu()", "native context menu"),

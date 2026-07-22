@@ -457,6 +457,7 @@ struct AppSettings: Codable {
     var apps: [AppItem] = []
     var recentApps: [AppItem] = []
     var recentAppCount: Int = 2
+    var showRecentApps: Bool = true
     var interactionMode: InteractionMode = .click
     var hotkey: HotkeyConfig = HotkeyConfig()
     var menuRadius: Double = 140
@@ -476,7 +477,10 @@ struct AppSettings: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         apps = (try? c.decode([AppItem].self, forKey: .apps)) ?? []
         recentApps = Array(((try? c.decode([AppItem].self, forKey: .recentApps)) ?? []).prefix(10))
-        recentAppCount = min(max((try? c.decode(Int.self, forKey: .recentAppCount)) ?? 2, 0), 3)
+        let decodedRecentAppCount = (try? c.decode(Int.self, forKey: .recentAppCount)) ?? 2
+        showRecentApps = (try? c.decode(Bool.self, forKey: .showRecentApps))
+            ?? (decodedRecentAppCount != 0)
+        recentAppCount = min(max(decodedRecentAppCount == 0 ? 2 : decodedRecentAppCount, 1), 4)
         interactionMode = (try? c.decode(InteractionMode.self, forKey: .interactionMode)) ?? .click
         hotkey = (try? c.decode(HotkeyConfig.self, forKey: .hotkey)) ?? HotkeyConfig()
         menuRadius = (try? c.decode(Double.self, forKey: .menuRadius)) ?? 140
@@ -542,6 +546,7 @@ class AppState: ObservableObject {
     @Published var isMenuVisible: Bool = false
     let nowPlaying = NowPlayingService()
     private var workspaceActivationObserver: NSObjectProtocol?
+    private var recentActivatedBundleIdentifiers: [String] = []
 
     private let settingsURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -575,6 +580,11 @@ class AppState: ObservableObject {
             self.settings.apps = Self.defaultApps()
         }
 
+        recentActivatedBundleIdentifiers = settings.recentApps.map(\.bundleIdentifier)
+        nowPlaying.recentMusicAppBundleIdentifiers = { [weak self] in
+            self?.recentActivatedBundleIdentifiers ?? []
+        }
+
         workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -601,7 +611,9 @@ class AppState: ObservableObject {
         if eligible != settings.recentApps {
             settings.recentApps = eligible
         }
-        recentAppSnapshot = Array(eligible.prefix(settings.recentAppCount))
+        recentAppSnapshot = settings.showRecentApps
+            ? Array(eligible.prefix(settings.recentAppCount))
+            : []
         selectedRecentAppIndex = nil
     }
 
@@ -609,10 +621,17 @@ class AppState: ObservableObject {
         guard let runningApplication = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
                 as? NSRunningApplication,
               let bundleIdentifier = runningApplication.bundleIdentifier,
-              let bundleURL = runningApplication.bundleURL,
-              shouldTrackRecentApplication(bundleIdentifier: bundleIdentifier) else {
+              let bundleURL = runningApplication.bundleURL else {
             return
         }
+
+        let ownBundleIdentifier = Bundle.main.bundleIdentifier ?? "com.qingshan.orbis"
+        guard bundleIdentifier != ownBundleIdentifier else { return }
+        recentActivatedBundleIdentifiers.removeAll { $0 == bundleIdentifier }
+        recentActivatedBundleIdentifiers.insert(bundleIdentifier, at: 0)
+        recentActivatedBundleIdentifiers = Array(recentActivatedBundleIdentifiers.prefix(10))
+
+        guard shouldTrackRecentApplication(bundleIdentifier: bundleIdentifier) else { return }
 
         let name = runningApplication.localizedName
             ?? FileManager.default.displayName(atPath: bundleURL.path)

@@ -93,9 +93,9 @@ The bundle identifier still uses `com.qingshan.orbis` to preserve update compati
 
 ## Music Support / 音乐功能说明
 
-**Everything works out of the box on every Mac — no developer tools required.** Playback controls are sent as system media keys. Track name and artwork are read through a bundled helper framework ([mediaremote-adapter](https://github.com/ungive/mediaremote-adapter), BSD-3-Clause) that runs on the system's Apple-signed Perl interpreter, which recent versions of macOS still allow to access Now Playing metadata.
+**Everything works out of the box on every Mac — no developer tools required.** When available, playback controls use the bundled MediaRemote adapter; system media keys are a fallback only. Track name and artwork are read through the same helper framework ([mediaremote-adapter](https://github.com/ungive/mediaremote-adapter), BSD-3-Clause), which runs on the system's Apple-signed Perl interpreter. Placeholder play brings the preferred running player forward and records a short-lived intent; Play is sent only after that player exposes a controllable session, so an ownerless media key cannot accidentally launch Apple Music.
 
-**所有功能开箱即用，不需要安装任何开发工具。** 播放控制通过系统媒体按键发送；歌名和封面由打包在 App 内的 helper 框架（[mediaremote-adapter](https://github.com/ungive/mediaremote-adapter)，BSD-3-Clause 协议）读取——它借助系统自带、Apple 签名的 Perl 解释器运行，这是较新版本 macOS 上读取"正在播放"信息的可行途径。
+**所有功能开箱即用，不需要安装任何开发工具。** 播放控制优先通过打包的 MediaRemote adapter 发送，只有 adapter 不可用时才退回系统媒体按键。占位状态点击播放会把优先播放器带到前台并记录短时意图；目标播放器建立可控会话后才补发播放，因此不会因无会话所有者而误启 Apple Music。歌名和封面由同一个 helper 框架（[mediaremote-adapter](https://github.com/ungive/mediaremote-adapter)，BSD-3-Clause 协议）读取，它借助系统自带、Apple 签名的 Perl 解释器运行。
 
 ## Notes / 说明
 

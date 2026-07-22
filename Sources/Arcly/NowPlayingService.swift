@@ -23,10 +23,12 @@ class NowPlayingService: ObservableObject {
     @Published private(set) var progressTimestamp: Date? = nil
     @Published private(set) var playbackRate: Double? = nil
     @Published private(set) var canSeek: Bool = false
+    var recentMusicAppBundleIdentifiers: (() -> [String])?
 
     private var isObserving = false
     private var helperProcess: Process?
     private var seekProcesses: [Process] = []
+    private var playbackCommandProcesses: [Process] = []
     private var helperRestartWorkItem: DispatchWorkItem?
     private var helperStartDate: Date = .distantPast
     private let helperBuffer = LineBuffer()
@@ -36,6 +38,10 @@ class NowPlayingService: ObservableObject {
     /// 可用的 helper 后端，按优先级排列；快速失败的后端会被移出队列。
     private var backendQueue: [HelperBackend] = []
     private var activeBackend: HelperBackend?
+    private var currentSessionBundleIdentifier: String?
+    private var pendingPlaybackIntent: PendingPlaybackIntent?
+    private var pendingPlaybackIntentExpirationWorkItem: DispatchWorkItem?
+    private let playbackIntentLifetime: TimeInterval = 12
 
     /// 封面归属追踪：检测"曲目换了、封面还是上一首的"这种滞后。
     private var lastAppliedTrackKey: String = ""
@@ -53,6 +59,12 @@ class NowPlayingService: ObservableObject {
     /// 元数据短暂读空时不立刻清空，避免切歌瞬间闪烁
     private let staleClearDelay: TimeInterval = 2.5
 
+    private struct PendingPlaybackIntent {
+        let id = UUID()
+        let targetBundleIdentifier: String
+        let expiresAt: Date
+    }
+
     // MARK: - 音乐 App 配置
 
     private static let musicBundleIDs: Set<String> = [
@@ -65,13 +77,32 @@ class NowPlayingService: ObservableObject {
         "com.colliderli.iina",
     ]
 
-    private var runningMusicApp: NSRunningApplication? {
-        let running = NSWorkspace.shared.runningApplications
-        let musicApps = running.filter { app in
+    private var runningMusicApps: [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter { app in
             guard let bid = app.bundleIdentifier else { return false }
-            return Self.musicBundleIDs.contains(bid)
+            return Self.musicBundleIDs.contains(bid) && !app.isTerminated
         }
+    }
+
+    private var runningMusicApp: NSRunningApplication? {
+        let musicApps = runningMusicApps
         return musicApps.first { $0.bundleIdentifier != "com.apple.Music" } ?? musicApps.first
+    }
+
+    private var preferredRunningMusicApp: NSRunningApplication? {
+        let musicApps = runningMusicApps
+        if let currentSessionBundleIdentifier,
+           let owner = musicApps.first(where: {
+               $0.bundleIdentifier == currentSessionBundleIdentifier
+           }) {
+            return owner
+        }
+        for bundleIdentifier in recentMusicAppBundleIdentifiers?() ?? [] {
+            if let recent = musicApps.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+                return recent
+            }
+        }
+        return runningMusicApp
     }
 
     // MARK: - MediaRemote
@@ -271,37 +302,144 @@ class NowPlayingService: ObservableObject {
         pendingClearWorkItem = nil
         artworkSettleWorkItem?.cancel()
         artworkSettleWorkItem = nil
+        cancelPendingPlaybackIntent()
         stopHelper()
     }
 
     deinit {
+        pendingPlaybackIntentExpirationWorkItem?.cancel()
         stopHelper()
         upkeepTimer?.invalidate()
     }
 
     // MARK: - 媒体控制
 
-    // 通过系统媒体按键发送，不依赖 MediaRemote 命令通道，因此在所有机器上都可用。
-
     func togglePlayPause() {
-        postSystemMediaKey(NX_KEYTYPE_PLAY)
+        guard !trackName.isEmpty else {
+            armPendingPlaybackIntent()
+            activatePreferredRunningMusicApp()
+            return
+        }
+        cancelPendingPlaybackIntent()
+        routePlaybackCommand(adapterCommand: 2, fallbackMediaKey: NX_KEYTYPE_PLAY)
         isPlaying.toggle()
         resetDisplayedProgressTracking()
         playingFrozenUntil = Date().addingTimeInterval(1.5)
     }
 
     func nextTrack() {
-        postSystemMediaKey(NX_KEYTYPE_NEXT)
+        cancelPendingPlaybackIntent()
+        guard !trackName.isEmpty else { return }
+        routePlaybackCommand(adapterCommand: 4, fallbackMediaKey: NX_KEYTYPE_NEXT)
         playingFrozenUntil = Date().addingTimeInterval(1.5)
     }
 
     func previousTrack() {
-        postSystemMediaKey(NX_KEYTYPE_PREVIOUS)
+        cancelPendingPlaybackIntent()
+        guard !trackName.isEmpty else { return }
+        routePlaybackCommand(adapterCommand: 5, fallbackMediaKey: NX_KEYTYPE_PREVIOUS)
         playingFrozenUntil = Date().addingTimeInterval(1.5)
+    }
+
+    private func routePlaybackCommand(adapterCommand: Int, fallbackMediaKey: Int32) {
+        if !sendAdapterPlaybackCommand(adapterCommand) {
+            postSystemMediaKey(fallbackMediaKey)
+        }
+    }
+
+    private func sendAdapterPlaybackCommand(_ command: Int) -> Bool {
+        guard activeBackend == .perlAdapter,
+              let perl = Self.perlURL,
+              let script = Self.adapterScriptURL,
+              let framework = Self.adapterFrameworkURL else { return false }
+
+        let process = Process()
+        process.executableURL = perl
+        process.arguments = [script.path, framework.path, "send", String(command)]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] finishedProcess in
+            DispatchQueue.main.async {
+                self?.playbackCommandProcesses.removeAll { $0 === finishedProcess }
+            }
+        }
+
+        do {
+            try process.run()
+            playbackCommandProcesses.append(process)
+            return true
+        } catch {
+            NSLog("⚠️ 无法发送 MediaRemote 播放命令: %@", error.localizedDescription)
+            return false
+        }
+    }
+
+    private func activatePreferredRunningMusicApp() {
+        guard let application = preferredRunningMusicApp else { return }
+        if application.activate(options: [.activateAllWindows]) { return }
+        guard let bundleURL = application.bundleURL else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(
+            at: bundleURL,
+            configuration: configuration,
+            completionHandler: nil
+        )
+    }
+
+    private func armPendingPlaybackIntent() {
+        cancelPendingPlaybackIntent()
+        guard let targetBundleIdentifier = preferredRunningMusicApp?.bundleIdentifier else { return }
+
+        let intent = PendingPlaybackIntent(
+            targetBundleIdentifier: targetBundleIdentifier,
+            expiresAt: Date().addingTimeInterval(playbackIntentLifetime)
+        )
+        pendingPlaybackIntent = intent
+
+        let expiration = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.pendingPlaybackIntent?.id == intent.id else { return }
+            self.cancelPendingPlaybackIntent()
+        }
+        pendingPlaybackIntentExpirationWorkItem = expiration
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + playbackIntentLifetime,
+            execute: expiration
+        )
+    }
+
+    private func cancelPendingPlaybackIntent() {
+        pendingPlaybackIntentExpirationWorkItem?.cancel()
+        pendingPlaybackIntentExpirationWorkItem = nil
+        pendingPlaybackIntent = nil
+    }
+
+    private func fulfillPendingPlaybackIntent(
+        using snapshot: NowPlayingSnapshot,
+        reportedBundleIdentifier: String?
+    ) {
+        guard let intent = pendingPlaybackIntent else { return }
+        guard intent.expiresAt > Date() else {
+            cancelPendingPlaybackIntent()
+            return
+        }
+        guard trackName.isEmpty || trackName == snapshot.title else {
+            cancelPendingPlaybackIntent()
+            return
+        }
+        guard reportedBundleIdentifier == intent.targetBundleIdentifier else { return }
+        guard !snapshot.title.isEmpty || snapshot.pid > 0 else { return }
+
+        // Consume before sending. Consecutive helper payloads can never send twice.
+        cancelPendingPlaybackIntent()
+        guard !snapshot.playing else { return }
+        _ = sendAdapterPlaybackCommand(2)
     }
 
     /// 使用 perl adapter 的一次性命令跳转播放位置。Swift 兜底后端没有命令通道。
     func seek(to seconds: TimeInterval) {
+        cancelPendingPlaybackIntent()
         guard activeBackend == .perlAdapter,
               canSeek,
               let duration, duration > 0,
@@ -486,6 +624,12 @@ class NowPlayingService: ObservableObject {
             snapshot = Self.parseSnapshot(line)
         }
         guard let snapshot else { return }
+        if backend == .perlAdapter {
+            fulfillPendingPlaybackIntent(
+                using: snapshot,
+                reportedBundleIdentifier: reportedBundleIdentifier(for: snapshot)
+            )
+        }
         apply(snapshot)
     }
 
@@ -679,10 +823,7 @@ class NowPlayingService: ObservableObject {
 
     private func apply(_ snapshot: NowPlayingSnapshot) {
         // 报告方不是已知播放器时，说明是系统里其他发声来源，不予采信。
-        let reportedBundleID = snapshot.bundleIdentifier
-            ?? (snapshot.pid > 0
-                ? NSRunningApplication(processIdentifier: snapshot.pid)?.bundleIdentifier
-                : nil)
+        let reportedBundleID = reportedBundleIdentifier(for: snapshot)
         if let bundleID = reportedBundleID,
            !Self.musicBundleIDs.contains(bundleID),
            let expected = runningMusicApp?.bundleIdentifier,
@@ -700,11 +841,15 @@ class NowPlayingService: ObservableObject {
 
         let trackChanged = trackName != snapshot.title
         if trackChanged {
+            if !trackName.isEmpty {
+                cancelPendingPlaybackIntent()
+            }
             clearProgress()
         }
         trackName = snapshot.title
         artistName = snapshot.artist
         hasNowPlaying = true
+        currentSessionBundleIdentifier = reportedBundleID
 
         // 冻结期内不覆盖 isPlaying，防止命令刚发出就被旧状态回弹
         if Date() > playingFrozenUntil {
@@ -717,6 +862,13 @@ class NowPlayingService: ObservableObject {
 
         applyProgress(snapshot, trackChanged: trackChanged)
         applyArtwork(snapshot, trackChanged: trackChanged)
+    }
+
+    private func reportedBundleIdentifier(for snapshot: NowPlayingSnapshot) -> String? {
+        snapshot.bundleIdentifier
+            ?? (snapshot.pid > 0
+                ? NSRunningApplication(processIdentifier: snapshot.pid)?.bundleIdentifier
+                : nil)
     }
 
     private func applyProgress(_ snapshot: NowPlayingSnapshot, trackChanged: Bool) {
@@ -824,6 +976,7 @@ class NowPlayingService: ObservableObject {
         trackName = ""
         artistName = ""
         albumArt = nil
+        currentSessionBundleIdentifier = nil
         clearProgress()
         if Date() > playingFrozenUntil {
             isPlaying = false

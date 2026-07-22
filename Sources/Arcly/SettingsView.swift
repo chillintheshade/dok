@@ -246,17 +246,25 @@ struct AppsSettingsView: View {
 
     private var recentAppsControl: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(Loc.string("settings.recentApps"))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
+            HStack {
+                Text(Loc.string("settings.recentApps"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Toggle("", isOn: $appState.settings.showRecentApps)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
 
             Picker("", selection: $appState.settings.recentAppCount) {
-                ForEach(0...3, id: \.self) { count in
+                ForEach(1...4, id: \.self) { count in
                     Text("\(count)").tag(count)
                 }
             }
             .labelsHidden()
             .pickerStyle(.segmented)
+            .disabled(!appState.settings.showRecentApps)
         }
         .padding(12)
         .background(

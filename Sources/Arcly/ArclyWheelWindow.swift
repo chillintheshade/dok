@@ -172,7 +172,9 @@ class ArclyWheelWindow: NSWindow {
 
         self.appState.isMenuVisible = false
         self.ignoresMouseEvents = true
-        self.alphaValue = 1
+        // Keep the native sampler alive while hiding its cached first frame.
+        // A true zero alpha can stop desktop sampling on some compositor paths.
+        self.alphaValue = MenuMotion.windowWarmupAlpha
         // Do not depend on app activation. This keeps presentation working after
         // clicking the wallpaper or entering the desktop-only Space.
         self.orderFrontRegardless()
@@ -184,11 +186,19 @@ class ArclyWheelWindow: NSWindow {
             withAnimation(MenuMotion.menuAnimation(isVisible: true)) {
                 self.appState.isMenuVisible = true
             }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = MenuMotion.windowRevealDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                self.animator().alphaValue = 1
+            }
             self.ignoresMouseEvents = false
             self.revealWorkItem = nil
         }
         revealWorkItem = reveal
-        DispatchQueue.main.async(execute: reveal)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + MenuMotion.glassSamplerWarmupDelay,
+            execute: reveal
+        )
 
         installEventMonitors()
     }
@@ -289,13 +299,24 @@ class ArclyWheelWindow: NSWindow {
     }
 
     private func handleRightClick(_ event: NSEvent) {
-        guard let index = slotIndex(at: NSEvent.mouseLocation),
-              index < appState.settings.apps.count else {
+        let screenPoint = NSEvent.mouseLocation
+        let recentIndex = satelliteIndex(at: screenPoint)
+        let fixedIndex = recentIndex == nil ? slotIndex(at: screenPoint) : nil
+
+        let app: AppItem
+        if let recentIndex, recentIndex < appState.recentAppSnapshot.count {
+            app = appState.recentAppSnapshot[recentIndex]
+            appState.selectedRecentAppIndex = recentIndex
+            appState.selectedIndex = nil
+        } else if let fixedIndex, fixedIndex < appState.settings.apps.count {
+            app = appState.settings.apps[fixedIndex]
+            appState.selectedIndex = fixedIndex
+            appState.selectedRecentAppIndex = nil
+        } else {
             dismiss()
             return
         }
 
-        let app = appState.settings.apps[index]
         guard app.itemType == .app,
               app.isRunning,
               let runningApplication = NSWorkspace.shared.runningApplications.first(where: {
@@ -305,7 +326,6 @@ class ArclyWheelWindow: NSWindow {
             return
         }
 
-        appState.selectedIndex = index
         contextMenuApplication = runningApplication
         isContextMenuOpen = true
         suspendGlobalInteractionMonitors()
@@ -615,6 +635,11 @@ class ArclyWheelWindow: NSWindow {
         withAnimation(MenuMotion.menuAnimation(isVisible: false)) {
             appState.isMenuVisible = false
         }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = MenuMotion.contentDismissDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            animator().alphaValue = MenuMotion.windowWarmupAlpha
+        }
 
         let finishDismiss = DispatchWorkItem { [weak self] in
             guard let self, !self.appState.isMenuVisible else { return }
@@ -642,8 +667,8 @@ class ArclyWheelWindow: NSWindow {
         appState.isMenuVisible = false
         removeMonitors()
         ignoresMouseEvents = true
-        alphaValue = 1
         orderOut(nil)
+        alphaValue = 1
         onDismiss?()
         DispatchQueue.main.async {
             openSettings?()
