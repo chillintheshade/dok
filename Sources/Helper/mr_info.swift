@@ -1,6 +1,6 @@
 // 常驻 now-playing helper —— 可读副本。
 //
-// 运行时 Arcly 会把这段代码写到 Application Support 并交给 Swift 工具链执行
+// 运行时 dok 会把这段代码写到 Application Support 并交给 Swift 工具链执行
 // （见 NowPlayingService.helperScript）。此文件不参与构建，仅供阅读和单独调试：
 //
 //     swift Sources/Helper/mr_info.swift
@@ -8,7 +8,7 @@
 // 之所以要借工具链的壳来跑：macOS 只向 Apple 签名的进程开放 MediaRemote 元数据，
 // App 自身进程内直读通常返回空。
 //
-// 本文件由 work/arcly-now-playing-helper-sync-test.py 校验，
+// 本文件由 work/dok-now-playing-helper-sync-test.py 校验，
 // 必须与 NowPlayingService.helperScript 逐字一致。
 
 import Foundation

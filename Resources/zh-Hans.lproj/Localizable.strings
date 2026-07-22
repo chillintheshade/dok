@@ -2,11 +2,11 @@
 "settings.tab.general" = "通用";
 "settings.tab.wheel.subtitle" = "排序与添加";
 "settings.tab.general.subtitle" = "快捷键与行为";
-"settings.windowTitle" = "Arcly 设置";
+"settings.windowTitle" = "dok 设置";
 
-"menu.show" = "显示 Arcly";
+"menu.show" = "显示 dok";
 "menu.settings" = "设置…";
-"menu.quit" = "退出 Arcly";
+"menu.quit" = "退出 dok";
 "menu.file" = "文件";
 "menu.closeWindow" = "关闭窗口";
 "menu.edit" = "编辑";
@@ -17,7 +17,7 @@
 "menu.paste" = "粘贴";
 "menu.selectAll" = "全选";
 
-"onboarding.title" = "欢迎使用 Arcly！";
+"onboarding.title" = "欢迎使用 dok！";
 "onboarding.body" = "快速上手：\n1. 按 %@ 唤出轮盘菜单\n2. 移动鼠标到目标应用，点击即可启动\n3. 右键或按 Esc 关闭菜单\n4. 点击菜单栏图标打开设置\n\n提示：需要授权「辅助功能」权限才能使用全局快捷键。";
 "onboarding.start" = "开始使用";
 "onboarding.openAccessibility" = "打开辅助功能设置";

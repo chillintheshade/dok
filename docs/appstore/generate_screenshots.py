@@ -19,7 +19,7 @@ BG_BOTTOM = (30, 60, 120)
 
 # Screenshot configs: (filename, headline, subline)
 CONFIGS = [
-    ("01-arcly-wheel.png", "环形启动器", "应用切换 · 音乐控制 · 一触即达"),
+    ("01-dok-wheel.png", "环形启动器", "应用切换 · 音乐控制 · 一触即达"),
     ("02-settings-apps.png", "轮盘按你习惯排列", "应用 · 文件夹 · 拖动排序"),
     ("03-settings-options.png", "为 macOS 设计", "快捷键 · 外观 · 播放控制"),
 ]
@@ -141,6 +141,6 @@ def generate_screenshot(raw_filename, headline, subline, output_filename):
 if __name__ == "__main__":
     print("生成 App Store 营销截图...")
     for i, (raw, headline, subline) in enumerate(CONFIGS):
-        output = f"arcly_screenshot_{i+1}.png"
+        output = f"dok_screenshot_{i+1}.png"
         generate_screenshot(raw, headline, subline, output)
     print(f"\n完成！输出目录：{OUT_DIR}")

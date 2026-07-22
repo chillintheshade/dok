@@ -2,11 +2,11 @@
 "settings.tab.general" = "General";
 "settings.tab.wheel.subtitle" = "Arrange & Add";
 "settings.tab.general.subtitle" = "Shortcuts & Behavior";
-"settings.windowTitle" = "Arcly Settings";
+"settings.windowTitle" = "dok Settings";
 
-"menu.show" = "Show Arcly";
+"menu.show" = "Show dok";
 "menu.settings" = "Settings...";
-"menu.quit" = "Quit Arcly";
+"menu.quit" = "Quit dok";
 "menu.file" = "File";
 "menu.closeWindow" = "Close Window";
 "menu.edit" = "Edit";
@@ -17,7 +17,7 @@
 "menu.paste" = "Paste";
 "menu.selectAll" = "Select All";
 
-"onboarding.title" = "Welcome to Arcly";
+"onboarding.title" = "Welcome to dok";
 "onboarding.body" = "Quick start:\n1. Press %@ to open the wheel\n2. Move to an item and click to launch\n3. Right-click or press Esc to close\n4. Use the menu bar icon to open Settings\n\nTip: Accessibility permission is required for the global shortcut.";
 "onboarding.start" = "Get Started";
 "onboarding.openAccessibility" = "Open Accessibility Settings";

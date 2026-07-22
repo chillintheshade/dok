@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Arcly",
+    name: "dok",
     platforms: [.macOS(.v26)],
     targets: [
         .executableTarget(
-            name: "Arcly",
-            path: "Sources/Arcly",
+            name: "dok",
+            path: "Sources/dok",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]

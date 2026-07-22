@@ -1,6 +1,6 @@
-# Arcly — App Store Connect 文案
+# dok — App Store Connect 文案
 
-> **状态：免费版提交草案（2026-07-21）。** Arcly 只有一套完整功能，不包含付费分层或应用内购买。当前源码的音乐信息依赖私有 MediaRemote API；创建不含该代码的 App Store target 并验证后才能提交本页。
+> **状态：免费版提交草案（2026-07-21）。** dok 只有一套完整功能，不包含付费分层或应用内购买。当前源码的音乐信息依赖私有 MediaRemote API；创建不含该代码的 App Store target 并验证后才能提交本页。
 
 ## 副标题 (30 字内)
 优雅的 Mac 环形启动器
@@ -21,13 +21,13 @@ launcher,radial menu,app switcher,shortcut,dock,productivity,quick launch,hotkey
 
 ## 推广文本 (170 字内，可随时更新，不用重新审核)
 
-一个按键，呼出你最常用的 App。Arcly 用环形菜单把快速启动、切换和控制集于一点，让你专注当下，少走弯路。
+一个按键，呼出你最常用的 App。dok 用环形菜单把快速启动、切换和控制集于一点，让你专注当下，少走弯路。
 
 ---
 
 ## 描述 (4000 字内)
 
-Arcly 是一款极简而优雅的 macOS 环形启动器。按下快捷键，你最常用的 App 就会以环形排列出现在鼠标周围，一次点击即可启动或切换。不再满屏寻找 Dock，不再让 Spotlight 打断你的思路。
+dok 是一款极简而优雅的 macOS 环形启动器。按下快捷键，你最常用的 App 就会以环形排列出现在鼠标周围，一次点击即可启动或切换。不再满屏寻找 Dock，不再让 Spotlight 打断你的思路。
 
 ━━━━━━━━━━━━━━━━
 核心特性
@@ -63,7 +63,7 @@ Arcly 是一款极简而优雅的 macOS 环形启动器。按下快捷键，你�
 隐私
 ━━━━━━━━━━━━━━━━
 
-Arcly 不收集任何数据、不联网、不追踪。所有偏好设置都仅保存在你自己的 Mac 上。
+dok 不收集任何数据、不联网、不追踪。所有偏好设置都仅保存在你自己的 Mac 上。
 
 有任何建议或反馈，欢迎联系：dongyang.wang.orbis@gmail.com
 
@@ -71,22 +71,22 @@ Arcly 不收集任何数据、不联网、不追踪。所有偏好设置都仅�
 
 ## 版本新功能说明 (4000 字内，1.0 首发)
 
-Arcly 1.0 首次发布。
+dok 1.0 首次发布。
 
 • 环形启动菜单
 • 全局快捷键呼出
 • 开机自启
 • 12 个轮盘槽位与完整自定义功能
 
-感谢你成为第一批 Arcly 用户。
+感谢你成为第一批 dok 用户。
 
 ---
 
 ## 支持 URL
-https://<你的 github 用户名>.github.io/arcly/
+https://<你的 github 用户名>.github.io/dok/
 
 ## 营销 URL（可选，可与支持 URL 相同）
-https://<你的 github 用户名>.github.io/arcly/
+https://<你的 github 用户名>.github.io/dok/
 
 ## 版权
 2026 Dongyang Wang
@@ -99,7 +99,7 @@ https://<你的 github 用户名>.github.io/arcly/
 
 ## 审核备注 (给苹果审核员看)
 
-Arcly is a macOS radial launcher. No account is required to test the app.
+dok is a macOS radial launcher. No account is required to test the app.
 
 All features are included for free. The app has no paid tier, subscription, or in-app purchase.
 
