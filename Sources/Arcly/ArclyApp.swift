@@ -198,6 +198,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func handleMouseTriggerUp(buttonNumber: Int) {
+        guard wheelWindow?.isContextMenuOpen != true else { return }
         guard buttonNumber == appState.settings.mouseTrigger.buttonNumber,
               appState.settings.interactionMode == .hold,
               isMenuOpen else {
@@ -435,6 +436,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func handleHotKeyUp() {
+        guard wheelWindow?.isContextMenuOpen != true else { return }
         if appState.settings.interactionMode == .hold && isMenuOpen {
             // 按住模式：松开 → 执行选中并关闭
             if let index = appState.selectedIndex,

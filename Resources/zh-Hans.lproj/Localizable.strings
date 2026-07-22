@@ -38,6 +38,7 @@
 "wheel.addAppsHint" = "点击下方添加应用";
 "wheel.dragToReorder" = "拖动排序";
 "wheel.dragToCenterDelete" = "拖至中心删除";
+"wheel.quitRunningApp" = "退出";
 
 "appPicker.title" = "添加应用";
 "appPicker.done" = "完成";

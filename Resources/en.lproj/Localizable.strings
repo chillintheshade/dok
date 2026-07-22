@@ -38,6 +38,7 @@
 "wheel.addAppsHint" = "Add apps below";
 "wheel.dragToReorder" = "Drag to Reorder";
 "wheel.dragToCenterDelete" = "Drop in Center to Delete";
+"wheel.quitRunningApp" = "Quit";
 
 "appPicker.title" = "Add App";
 "appPicker.done" = "Done";

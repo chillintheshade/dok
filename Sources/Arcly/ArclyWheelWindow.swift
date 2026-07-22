@@ -59,6 +59,8 @@ class ArclyWheelWindow: NSWindow {
     private var escMonitor: Any?
     private var revealWorkItem: DispatchWorkItem?
     private var dismissWorkItem: DispatchWorkItem?
+    private var contextMenuApplication: NSRunningApplication?
+    private(set) var isContextMenuOpen = false
     var onDismiss: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
@@ -190,21 +192,14 @@ class ArclyWheelWindow: NSWindow {
 
     private func installEventMonitors() {
         removeMonitors()
+        installGlobalInteractionMonitors()
 
-        // Mouse movement - global
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]) { [weak self] event in
-            self?.updateSelection()
-        }
         // Mouse movement - local (when mouse is over our window)
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]) { [weak self] event in
             self?.updateSelection()
             return event
         }
 
-        // Click - global (clicking outside window)
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
-            self?.dismiss()
-        }
         // Click - local (clicking inside window)
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
             guard let self = self else { return nil }
@@ -255,13 +250,9 @@ class ArclyWheelWindow: NSWindow {
             return nil
         }
 
-        // 右键关闭 - global（窗口外右键）
-        rightClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] _ in
-            self?.dismiss()
-        }
-        // 右键关闭 - local（窗口内右键）
+        // 运行中的 App 槽位显示退出菜单，其余位置维持关闭轮盘。
         localRightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
-            self?.dismiss()
+            self?.handleRightClick(event)
             return nil
         }
 
@@ -275,32 +266,75 @@ class ArclyWheelWindow: NSWindow {
         }
     }
 
+    private func installGlobalInteractionMonitors() {
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]
+        ) { [weak self] _ in
+            self?.updateSelection()
+        }
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
+            self?.dismiss()
+        }
+        rightClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] _ in
+            self?.dismiss()
+        }
+    }
+
+    private func suspendGlobalInteractionMonitors() {
+        if let monitor = mouseMonitor { NSEvent.removeMonitor(monitor); mouseMonitor = nil }
+        if let monitor = clickMonitor { NSEvent.removeMonitor(monitor); clickMonitor = nil }
+        if let monitor = rightClickMonitor { NSEvent.removeMonitor(monitor); rightClickMonitor = nil }
+    }
+
+    private func handleRightClick(_ event: NSEvent) {
+        guard let index = slotIndex(at: NSEvent.mouseLocation),
+              index < appState.settings.apps.count else {
+            dismiss()
+            return
+        }
+
+        let app = appState.settings.apps[index]
+        guard app.itemType == .app,
+              app.isRunning,
+              let runningApplication = NSWorkspace.shared.runningApplications.first(where: {
+                  $0.bundleIdentifier == app.bundleIdentifier && !$0.isTerminated
+              }) else {
+            dismiss()
+            return
+        }
+
+        appState.selectedIndex = index
+        contextMenuApplication = runningApplication
+        isContextMenuOpen = true
+        suspendGlobalInteractionMonitors()
+
+        let menu = NSMenu()
+        let quitItem = NSMenuItem(
+            title: Loc.string("wheel.quitRunningApp"),
+            action: #selector(quitContextMenuApplication),
+            keyEquivalent: ""
+        )
+        quitItem.target = self
+        menu.addItem(quitItem)
+        let menuPoint = contentView?.convert(event.locationInWindow, from: nil)
+            ?? event.locationInWindow
+        menu.popUp(positioning: nil, at: menuPoint, in: contentView)
+
+        isContextMenuOpen = false
+        contextMenuApplication = nil
+        if isVisible && appState.isMenuVisible {
+            installGlobalInteractionMonitors()
+        }
+    }
+
+    @objc private func quitContextMenuApplication() {
+        contextMenuApplication?.terminate()
+        dismiss()
+    }
+
     func updateSelection() {
         let mouseLocation = NSEvent.mouseLocation
-        let center = NSPoint(x: self.frame.midX, y: self.frame.midY)
-
-        let dx = mouseLocation.x - center.x
-        let dy = mouseLocation.y - center.y
-        let distance = sqrt(dx * dx + dy * dy)
-
-        let appCount = appState.settings.apps.count
-        guard appCount > 0 else { return }
-
-        let innerRadius = appState.settings.menuRadius - 50
-        let outerRadius = appState.settings.menuRadius + 50
-
-        let newIndex: Int?
-        if seekFraction(dx: dx, dy: dy) != nil
-            || isInsideCenterControls(dx: dx, dy: dy, distance: distance)
-            || distance < innerRadius || distance > outerRadius {
-            newIndex = nil
-        } else {
-            var angle = atan2(dy, dx)
-            if angle < 0 { angle += 2 * .pi }
-            let sliceAngle = (2 * Double.pi) / Double(appCount)
-            let adjustedAngle = fmod(angle + .pi / 2 + sliceAngle / 2, 2 * .pi)
-            newIndex = Int(adjustedAngle / sliceAngle) % appCount
-        }
+        let newIndex = slotIndex(at: mouseLocation)
 
         // 仅在值变化时更新，禁用 Core Animation 隐式动画防止闪烁
         if appState.selectedIndex != newIndex {
@@ -325,6 +359,30 @@ class ArclyWheelWindow: NSWindow {
                 }
             }
         }
+    }
+
+    private func slotIndex(at screenPoint: NSPoint) -> Int? {
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        let dx = screenPoint.x - center.x
+        let dy = screenPoint.y - center.y
+        let distance = hypot(dx, dy)
+        let appCount = appState.settings.apps.count
+        guard appCount > 0 else { return nil }
+
+        let innerRadius = appState.settings.menuRadius - 50
+        let outerRadius = appState.settings.menuRadius + 50
+        guard seekFraction(dx: dx, dy: dy) == nil,
+              !isInsideCenterControls(dx: dx, dy: dy, distance: distance),
+              distance >= innerRadius,
+              distance <= outerRadius else {
+            return nil
+        }
+
+        var angle = atan2(dy, dx)
+        if angle < 0 { angle += 2 * .pi }
+        let sliceAngle = (2 * Double.pi) / Double(appCount)
+        let adjustedAngle = fmod(angle + .pi / 2 + sliceAngle / 2, 2 * .pi)
+        return Int(adjustedAngle / sliceAngle) % appCount
     }
 
     // MARK: - 拖放处理
@@ -549,11 +607,9 @@ class ArclyWheelWindow: NSWindow {
     }
 
     private func removeMonitors() {
-        if let m = mouseMonitor { NSEvent.removeMonitor(m); mouseMonitor = nil }
+        suspendGlobalInteractionMonitors()
         if let m = localMouseMonitor { NSEvent.removeMonitor(m); localMouseMonitor = nil }
-        if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
         if let m = localClickMonitor { NSEvent.removeMonitor(m); localClickMonitor = nil }
-        if let m = rightClickMonitor { NSEvent.removeMonitor(m); rightClickMonitor = nil }
         if let m = localRightClickMonitor { NSEvent.removeMonitor(m); localRightClickMonitor = nil }
         if let m = escMonitor { NSEvent.removeMonitor(m); escMonitor = nil }
     }
