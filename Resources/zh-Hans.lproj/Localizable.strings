@@ -31,6 +31,7 @@
 "settings.addFolder.subtitle" = "文件或文件夹都可以";
 "settings.restoreDefaults" = "恢复默认";
 "settings.restoreDefaults.subtitle" = "重新放回系统常用项";
+"settings.recentApps" = "最近应用";
 
 "wheel.releaseToDelete" = "松开删除";
 "wheel.dragToCenter" = "拖至中心";

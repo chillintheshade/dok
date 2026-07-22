@@ -205,9 +205,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
 
-        if let index = appState.selectedIndex,
-           index < appState.settings.apps.count {
-            let app = appState.settings.apps[index]
+        if let app = wheelWindow?.selectedAppForActivation() {
             closeArcly()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 self.wheelWindow?.launchApp(app) ?? {
@@ -439,9 +437,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard wheelWindow?.isContextMenuOpen != true else { return }
         if appState.settings.interactionMode == .hold && isMenuOpen {
             // 按住模式：松开 → 执行选中并关闭
-            if let index = appState.selectedIndex,
-               index < appState.settings.apps.count {
-                let app = appState.settings.apps[index]
+            if let app = wheelWindow?.selectedAppForActivation() {
                 closeArcly()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     self.wheelWindow?.launchApp(app) ?? {

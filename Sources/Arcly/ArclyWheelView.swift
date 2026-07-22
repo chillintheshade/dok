@@ -175,6 +175,40 @@ enum MenuMotion {
     }
 }
 
+enum RecentAppSatelliteGeometry {
+    static let iconScale: CGFloat = 0.75
+    static let glassPadding: CGFloat = 8
+    static let edgeGap: CGFloat = 12
+
+    static func iconSize(for mainIconSize: CGFloat) -> CGFloat {
+        mainIconSize * iconScale
+    }
+
+    static func baseDiameter(for mainIconSize: CGFloat) -> CGFloat {
+        iconSize(for: mainIconSize) + glassPadding * 2
+    }
+
+    static func offsets(
+        count: Int,
+        outerRadius: CGFloat,
+        mainIconSize: CGFloat
+    ) -> [CGPoint] {
+        let angles: [CGFloat]
+        switch min(max(count, 0), 3) {
+        case 1: angles = [90]
+        case 2: angles = [78, 102]
+        case 3: angles = [72, 90, 108]
+        default: return []
+        }
+
+        let orbit = outerRadius + edgeGap + baseDiameter(for: mainIconSize) / 2
+        return angles.map { degrees in
+            let radians = degrees * .pi / 180
+            return CGPoint(x: orbit * cos(radians), y: orbit * sin(radians))
+        }
+    }
+}
+
 // MARK: - ArclyWheelView
 
 struct ArclyWheelView: View {
@@ -182,7 +216,7 @@ struct ArclyWheelView: View {
     var onAppSelected: ((AppItem) -> Void)?
     var onSettingsTapped: (() -> Void)?
 
-    static let windowSize: CGFloat = 480
+    static let windowSize: CGFloat = 640
 
     @State private var wedgeAngle: Double = 90
     @State private var showWedge: Bool = false
@@ -236,6 +270,7 @@ struct ArclyWheelView: View {
     }
     private var showsMusicController: Bool {
         appState.selectedIndex == nil
+            && appState.selectedRecentAppIndex == nil
             && nowPlaying.hasNowPlaying
             && appState.settings.showMusicControl
     }
@@ -289,6 +324,7 @@ struct ArclyWheelView: View {
             musicProgressBoundaryLayer
             centerContent
             iconsLayer
+            recentAppSatellitesLayer
         }
         .scaleEffect(appState.isMenuVisible ? 1 : 0.975)
         .opacity(appState.isMenuVisible ? 1 : 0)
@@ -329,7 +365,7 @@ struct ArclyWheelView: View {
             WedgeShape(
                 midAngle: wedgeAngle,
                 sliceAngle: sliceAngleDeg,
-                innerRadius: innerRadius + 3,
+                innerRadius: centerLensRadius + 3,
                 outerRadius: outerRadius - 3
             )
             .fill(Color.accentColor.opacity(0.12))
@@ -391,6 +427,63 @@ struct ArclyWheelView: View {
     }
 
     @ViewBuilder
+    private var recentAppSatellitesLayer: some View {
+        let apps = appState.recentAppSnapshot
+        let offsets = RecentAppSatelliteGeometry.offsets(
+            count: apps.count,
+            outerRadius: outerRadius,
+            mainIconSize: iconSize
+        )
+
+        ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
+            if index < offsets.count {
+                recentAppSatellite(
+                    app: app,
+                    isSelected: appState.selectedRecentAppIndex == index
+                )
+                .position(
+                    x: center + offsets[index].x,
+                    y: center + offsets[index].y
+                )
+            }
+        }
+    }
+
+    private func recentAppSatellite(app: AppItem, isSelected: Bool) -> some View {
+        let satelliteIconSize = RecentAppSatelliteGeometry.iconSize(for: iconSize)
+        let baseDiameter = RecentAppSatelliteGeometry.baseDiameter(for: iconSize)
+
+        return ZStack {
+            NativeGlassSamplingLayer(
+                cornerRadius: baseDiameter / 2,
+                intensity: glassMaterialIntensity
+            )
+            Circle()
+                .stroke(Color.white.opacity(0.22 * glassMaterialIntensity), lineWidth: 0.55)
+
+            Image(nsImage: app.icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: satelliteIconSize, height: satelliteIconSize)
+                .clipShape(RoundedRectangle(
+                    cornerRadius: satelliteIconSize * 0.22,
+                    style: .continuous
+                ))
+
+            Image(systemName: "clock.fill")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.72))
+                .frame(width: 15, height: 15)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.32), lineWidth: 0.5))
+                .offset(x: baseDiameter * 0.31, y: baseDiameter * 0.31)
+        }
+        .frame(width: baseDiameter, height: baseDiameter)
+        .scaleEffect(isSelected ? 1.08 : 1)
+        .animation(MenuMotion.iconFocusAnimation, value: isSelected)
+    }
+
+    @ViewBuilder
     private func selectedIconHalo(angle: Double, isSelected: Bool) -> some View {
         RoundedRectangle(cornerRadius: iconSize * 0.42, style: .continuous)
             .fill(.white.opacity(0.32))
@@ -435,12 +528,18 @@ struct ArclyWheelView: View {
         if let index = appState.selectedIndex, index < appState.settings.apps.count {
             return appState.settings.apps[index].displayName
         }
+        if let index = appState.selectedRecentAppIndex, index < appState.recentAppSnapshot.count {
+            return appState.recentAppSnapshot[index].displayName
+        }
         return ""
     }
 
     private var centerContentIdentity: String {
         if let index = appState.selectedIndex, index < appState.settings.apps.count {
             return "app-\(appState.settings.apps[index].id)"
+        }
+        if let index = appState.selectedRecentAppIndex, index < appState.recentAppSnapshot.count {
+            return "recent-app-\(appState.recentAppSnapshot[index].id)"
         }
 
         let np = nowPlaying
@@ -456,7 +555,7 @@ struct ArclyWheelView: View {
     @ViewBuilder
     var centerContent: some View {
         let np = nowPlaying
-        let noSelection = appState.selectedIndex == nil
+        let noSelection = appState.selectedIndex == nil && appState.selectedRecentAppIndex == nil
         let hasMusic = np.hasNowPlaying && appState.settings.showMusicControl
 
         ZStack {

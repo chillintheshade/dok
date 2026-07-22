@@ -455,6 +455,8 @@ struct HotkeyConfig: Codable {
 
 struct AppSettings: Codable {
     var apps: [AppItem] = []
+    var recentApps: [AppItem] = []
+    var recentAppCount: Int = 2
     var interactionMode: InteractionMode = .click
     var hotkey: HotkeyConfig = HotkeyConfig()
     var menuRadius: Double = 140
@@ -473,6 +475,8 @@ struct AppSettings: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         apps = (try? c.decode([AppItem].self, forKey: .apps)) ?? []
+        recentApps = Array(((try? c.decode([AppItem].self, forKey: .recentApps)) ?? []).prefix(10))
+        recentAppCount = min(max((try? c.decode(Int.self, forKey: .recentAppCount)) ?? 2, 0), 3)
         interactionMode = (try? c.decode(InteractionMode.self, forKey: .interactionMode)) ?? .click
         hotkey = (try? c.decode(HotkeyConfig.self, forKey: .hotkey)) ?? HotkeyConfig()
         menuRadius = (try? c.decode(Double.self, forKey: .menuRadius)) ?? 140
@@ -533,8 +537,11 @@ class AppState: ObservableObject {
         didSet { saveSettings() }
     }
     @Published var selectedIndex: Int? = nil
+    @Published var selectedRecentAppIndex: Int? = nil
+    @Published private(set) var recentAppSnapshot: [AppItem] = []
     @Published var isMenuVisible: Bool = false
     let nowPlaying = NowPlayingService()
+    private var workspaceActivationObserver: NSObjectProtocol?
 
     private let settingsURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -567,11 +574,83 @@ class AppState: ObservableObject {
             // Add some default apps
             self.settings.apps = Self.defaultApps()
         }
+
+        workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.recordActivatedApplication(from: notification)
+        }
+    }
+
+    deinit {
+        if let workspaceActivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
+        }
     }
 
     func saveSettings() {
         if let data = try? JSONEncoder().encode(settings) {
             try? data.write(to: settingsURL)
+        }
+    }
+
+    func snapshotRecentApps() {
+        let eligible = eligibleRecentApps(settings.recentApps)
+        if eligible != settings.recentApps {
+            settings.recentApps = eligible
+        }
+        recentAppSnapshot = Array(eligible.prefix(settings.recentAppCount))
+        selectedRecentAppIndex = nil
+    }
+
+    private func recordActivatedApplication(from notification: Notification) {
+        guard let runningApplication = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication,
+              let bundleIdentifier = runningApplication.bundleIdentifier,
+              let bundleURL = runningApplication.bundleURL,
+              shouldTrackRecentApplication(bundleIdentifier: bundleIdentifier) else {
+            return
+        }
+
+        let name = runningApplication.localizedName
+            ?? FileManager.default.displayName(atPath: bundleURL.path)
+                .replacingOccurrences(of: ".app", with: "")
+        let recent = AppItem(
+            name: name,
+            bundleIdentifier: bundleIdentifier,
+            path: bundleURL.path
+        )
+        var updated = settings.recentApps.filter { $0.bundleIdentifier != bundleIdentifier }
+        updated.insert(recent, at: 0)
+        settings.recentApps = Array(eligibleRecentApps(updated).prefix(10))
+    }
+
+    private func shouldTrackRecentApplication(bundleIdentifier: String) -> Bool {
+        let ownBundleIdentifier = Bundle.main.bundleIdentifier ?? "com.qingshan.orbis"
+        guard bundleIdentifier != ownBundleIdentifier else { return false }
+        return !settings.apps.contains {
+            $0.itemType == .app && $0.bundleIdentifier == bundleIdentifier
+        }
+    }
+
+    private func eligibleRecentApps(_ apps: [AppItem]) -> [AppItem] {
+        let ownBundleIdentifier = Bundle.main.bundleIdentifier ?? "com.qingshan.orbis"
+        let fixedBundleIdentifiers = Set(settings.apps.compactMap { item in
+            item.itemType == .app && !item.bundleIdentifier.isEmpty ? item.bundleIdentifier : nil
+        })
+        var seen = Set<String>()
+        return apps.filter { item in
+            guard item.itemType == .app,
+                  !item.bundleIdentifier.isEmpty,
+                  item.bundleIdentifier != ownBundleIdentifier,
+                  !fixedBundleIdentifiers.contains(item.bundleIdentifier),
+                  !seen.contains(item.bundleIdentifier) else {
+                return false
+            }
+            seen.insert(item.bundleIdentifier)
+            return true
         }
     }
 

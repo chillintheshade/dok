@@ -46,6 +46,7 @@ def main() -> None:
         ("private var selectedWedgeLayer", "selected wedge is isolated as a dedicated animated layer"),
         ("WedgeShape(", "selected wedge uses the plain shape"),
         ("sliceAngle: sliceAngleDeg", "selected wedge uses fixed sector width"),
+        ("innerRadius: centerLensRadius + 3", "selected wedge stays outside the scaled center lens"),
         ("private func normalizedAngleDelta(from current: Double, to target: Double) -> Double", "selected wedge uses shortest path between sectors"),
         ("let delta = normalizedAngleDelta(from: wedgeAngle, to: target)", "selected wedge computes smooth sector travel"),
         ("withAnimation(MenuMotion.wedgeSelectionAnimation)", "selected wedge moves with a named fast animation"),

@@ -239,8 +239,34 @@ struct AppsSettingsView: View {
     private var appsControlPane: some View {
         VStack(alignment: .leading, spacing: 10) {
             controlList
+            recentAppsControl
         }
         .frame(width: 208)
+    }
+
+    private var recentAppsControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Loc.string("settings.recentApps"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Picker("", selection: $appState.settings.recentAppCount) {
+                ForEach(0...3, id: \.self) { count in
+                    Text("\(count)").tag(count)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+        }
+        .padding(12)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+        }
     }
 
     private var controlList: some View {

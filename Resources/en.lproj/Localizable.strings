@@ -31,6 +31,7 @@
 "settings.addFolder.subtitle" = "Files and folders";
 "settings.restoreDefaults" = "Restore Defaults";
 "settings.restoreDefaults.subtitle" = "Bring back common system items";
+"settings.recentApps" = "Recent Apps";
 
 "wheel.releaseToDelete" = "Release to Delete";
 "wheel.dragToCenter" = "Drag to Center";

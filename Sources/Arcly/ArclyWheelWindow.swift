@@ -159,6 +159,7 @@ class ArclyWheelWindow: NSWindow {
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
         self.appState.selectedIndex = nil
+        self.appState.selectedRecentAppIndex = nil
 
         guard !wasAlreadyPresented else {
             self.alphaValue = 1
@@ -166,6 +167,8 @@ class ArclyWheelWindow: NSWindow {
             installEventMonitors()
             return
         }
+
+        self.appState.snapshotRecentApps()
 
         self.appState.isMenuVisible = false
         self.ignoresMouseEvents = true
@@ -234,9 +237,8 @@ class ArclyWheelWindow: NSWindow {
             }
 
             // 点击应用图标 → 启动应用
-            var appToLaunch: AppItem? = nil
-            if let index = self.appState.selectedIndex, index < self.appState.settings.apps.count {
-                appToLaunch = self.appState.settings.apps[index]
+            let appToLaunch = self.selectedAppForActivation()
+            if appToLaunch != nil {
                 if self.appState.settings.soundEffects {
                     NSSound(named: "Tink")?.play()
                 }
@@ -334,19 +336,22 @@ class ArclyWheelWindow: NSWindow {
 
     func updateSelection() {
         let mouseLocation = NSEvent.mouseLocation
-        let newIndex = slotIndex(at: mouseLocation)
+        let newRecentIndex = satelliteIndex(at: mouseLocation)
+        let newIndex = newRecentIndex == nil ? slotIndex(at: mouseLocation) : nil
 
         // 仅在值变化时更新，禁用 Core Animation 隐式动画防止闪烁
-        if appState.selectedIndex != newIndex {
+        if appState.selectedIndex != newIndex
+            || appState.selectedRecentAppIndex != newRecentIndex {
             NSAnimationContext.beginGrouping()
             NSAnimationContext.current.duration = 0
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             appState.selectedIndex = newIndex
+            appState.selectedRecentAppIndex = newRecentIndex
             CATransaction.commit()
             NSAnimationContext.endGrouping()
 
-            if newIndex != nil {
+            if newIndex != nil || newRecentIndex != nil {
                 // 触觉 + 音效同步触发
                 if appState.settings.hapticFeedback {
                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
@@ -383,6 +388,33 @@ class ArclyWheelWindow: NSWindow {
         let sliceAngle = (2 * Double.pi) / Double(appCount)
         let adjustedAngle = fmod(angle + .pi / 2 + sliceAngle / 2, 2 * .pi)
         return Int(adjustedAngle / sliceAngle) % appCount
+    }
+
+    private func satelliteIndex(at screenPoint: NSPoint) -> Int? {
+        let satellites = appState.recentAppSnapshot
+        guard !satellites.isEmpty else { return nil }
+
+        let outerRadius = appState.settings.menuRadius + 50
+        let baseDiameter = RecentAppSatelliteGeometry.baseDiameter(
+            for: appState.settings.iconSize
+        )
+        let offsets = RecentAppSatelliteGeometry.offsets(
+            count: satellites.count,
+            outerRadius: outerRadius,
+            mainIconSize: appState.settings.iconSize
+        )
+        let hitRadius = baseDiameter / 2 + 4
+
+        for (index, offset) in offsets.enumerated() {
+            let satelliteCenter = NSPoint(
+                x: frame.midX + offset.x,
+                y: frame.midY - offset.y
+            )
+            if hypot(screenPoint.x - satelliteCenter.x, screenPoint.y - satelliteCenter.y) <= hitRadius {
+                return index
+            }
+        }
+        return nil
     }
 
     // MARK: - 拖放处理
@@ -531,10 +563,20 @@ class ArclyWheelWindow: NSWindow {
     }
 
     func activateSelected() {
-        guard let index = appState.selectedIndex,
-              index < appState.settings.apps.count else { return }
-        let app = appState.settings.apps[index]
+        guard let app = selectedAppForActivation() else { return }
         launchApp(app)
+    }
+
+    func selectedAppForActivation() -> AppItem? {
+        if let index = appState.selectedRecentAppIndex,
+           index < appState.recentAppSnapshot.count {
+            return appState.recentAppSnapshot[index]
+        }
+        if let index = appState.selectedIndex,
+           index < appState.settings.apps.count {
+            return appState.settings.apps[index]
+        }
+        return nil
     }
 
     func launchApp(_ app: AppItem) {
@@ -566,6 +608,7 @@ class ArclyWheelWindow: NSWindow {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
         appState.selectedIndex = nil
+        appState.selectedRecentAppIndex = nil
         removeMonitors()
         ignoresMouseEvents = true
 
@@ -595,6 +638,7 @@ class ArclyWheelWindow: NSWindow {
         dismissWorkItem = nil
         let openSettings = onOpenSettings // 先捕获，防止 onDismiss 释放 self 后丢失
         appState.selectedIndex = nil
+        appState.selectedRecentAppIndex = nil
         appState.isMenuVisible = false
         removeMonitors()
         ignoresMouseEvents = true
