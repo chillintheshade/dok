@@ -36,7 +36,8 @@ dok 当前需要 macOS 26.0 或更高版本。
 - Native macOS preference toolbar and safer restore-defaults flow / 原生 macOS 设置工具栏，恢复默认增加确认
 - Smoother summon and dismiss animations / 优化轮盘呼出与收起动画，减少闪烁
 
-[View the full release notes and download dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)  
+[View the full release notes and download dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)
+
 [查看完整更新说明并下载 dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)
 
 ## Preview / 预览
