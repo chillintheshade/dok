@@ -47,16 +47,16 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 - Build, run all contract tests, install, sign, and visually inspect both settings tabs after UI changes.
 - Do not commit or push unless the user explicitly asks.
 
-## Current State (2026-07-22)
+## Current State (2026-08-11)
 
-- App version is 1.1.0; the local source and `/Applications/dok.app` include the current wheel and settings fixes.
+- App version is 1.2.0; the local source and `/Applications/dok.app` include files, websites, recent-content preview, and the native settings toolbar.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
 - Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - Glass look is final: native `.clear` sampling with a `0.03` black tint base, no extra tone layer, native edge plus a single `0.55pt` white supplement. `menuOpacity` maps linearly to material intensity; 100% is the approved look.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
 - Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-content satellites (default 2) sit outside the wheel at 6 o'clock and include apps plus folders opened through dok, while files and websites stay fixed-slot only; Dock notification badges render on app slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
-- `dist/dok-1.1.0.dmg` is the current ad-hoc-signed self-distribution package.
+- `dist/dok-1.2.0.dmg` is the current ad-hoc-signed self-distribution package.
 
 ## Next Release
 
