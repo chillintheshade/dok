@@ -28,6 +28,17 @@ dok currently requires macOS 26.0 or later.
 
 dok 当前需要 macOS 26.0 或更高版本。
 
+## Latest Update: 1.2.0 / 最新更新：1.2.0
+
+- Add apps, files, folders, and websites to the wheel / 轮盘支持应用、文件、文件夹和网址
+- Recent Content satellites now support apps and folders, with 1–4 items / 最近内容卫星支持应用和文件夹，可显示 1–4 个
+- Wheel Settings previews Recent Content satellites immediately / 设置页轮盘可实时预览最近内容
+- Native macOS preference toolbar and safer restore-defaults flow / 原生 macOS 设置工具栏，恢复默认增加确认
+- Smoother summon and dismiss animations / 优化轮盘呼出与收起动画，减少闪烁
+
+[View the full release notes and download dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)  
+[查看完整更新说明并下载 dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)
+
 ## Preview / 预览
 
 <p align="center">
