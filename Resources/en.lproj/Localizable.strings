@@ -23,15 +23,32 @@
 "onboarding.openAccessibility" = "Open Accessibility Settings";
 
 "openPanel.add" = "Add";
-"openPanel.fileOrFolder.message" = "Choose a file or folder to add to the wheel";
+"openPanel.folder.message" = "Choose a folder to add to the wheel";
+"openPanel.file.message" = "Choose a file to add to the wheel";
+
+"link.title" = "Add Website";
+"link.message" = "Enter a website address. dok will open it in your default browser.";
+"link.placeholder" = "example.com";
+"link.add" = "Add";
+"link.cancel" = "Cancel";
+"link.invalid.title" = "Invalid Website Address";
+"link.invalid.message" = "Enter a valid http or https address.";
 
 "settings.addApp" = "Add App";
 "settings.addApp.subtitle" = "Choose from Applications";
 "settings.addFolder" = "Add Folder";
-"settings.addFolder.subtitle" = "Files and folders";
+"settings.addFolder.subtitle" = "Choose a folder";
+"settings.addFile" = "Add File";
+"settings.addFile.subtitle" = "Choose a document or file";
+"settings.addLink" = "Add Website";
+"settings.addLink.subtitle" = "Open in your default browser";
 "settings.restoreDefaults" = "Restore Defaults";
 "settings.restoreDefaults.subtitle" = "Bring back common system items";
-"settings.recentApps" = "Recent Apps";
+"settings.restoreDefaults.confirm.title" = "Restore the Default Wheel?";
+"settings.restoreDefaults.confirm.message" = "The apps, files, folders, and websites currently on the wheel will be replaced with common system items. This cannot be undone.";
+"settings.restoreDefaults.confirm.action" = "Restore Defaults";
+"settings.restoreDefaults.confirm.cancel" = "Cancel";
+"settings.recentApps" = "Recent Content";
 
 "wheel.releaseToDelete" = "Release to Delete";
 "wheel.dragToCenter" = "Drag to Center";

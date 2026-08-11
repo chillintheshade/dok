@@ -5,13 +5,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_STATE = (ROOT / "Sources/dok/AppState.swift").read_text()
 SETTINGS = (ROOT / "Sources/dok/SettingsView.swift").read_text()
+DOK_APP = (ROOT / "Sources/dok/DokApp.swift").read_text()
 
 assert "hotkeyRecordingCancelled" in APP_STATE
 
-sidebar_post = "NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)"
-selection = "selectedTab = tab"
-assert sidebar_post in SETTINGS, "sidebar actions must cancel hotkey recording"
-assert SETTINGS.index(sidebar_post) < SETTINGS.index(selection), "cancel recording before changing tabs"
+toolbar_post = "NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)"
+selection = "selectedSettingsTab = tab"
+assert toolbar_post in DOK_APP, "toolbar pane changes must cancel hotkey recording"
+assert DOK_APP.index(toolbar_post) < DOK_APP.index(selection), "cancel recording before changing panes"
 
 assert ".onReceive(NotificationCenter.default.publisher(for: .hotkeyRecordingCancelled))" in SETTINGS
 assert ".onDisappear" in SETTINGS

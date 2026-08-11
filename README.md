@@ -16,9 +16,9 @@
   <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue">
 </p>
 
-dok puts your everyday Mac actions under your cursor: launch apps, open files and folders, and control music from a quiet radial menu.
+dok puts your everyday Mac actions under your cursor: launch apps, open files, folders, and websites, and control music from a quiet radial menu.
 
-dok 把高频操作放到鼠标附近：启动应用、打开文件和文件夹、控制音乐，都在一个轻量的轮盘里完成。
+dok 把高频操作放到鼠标附近：启动应用、打开文件、文件夹和网址、控制音乐，都在一个轻量的轮盘里完成。
 
 Every feature is available for free. dok has no account requirement, paid tier, or in-app purchase.
 
@@ -50,8 +50,8 @@ dok 当前需要 macOS 26.0 或更高版本。
   中心音乐区：封面、曲目和极简进度弧，点按进度弧即可跳转播放位置
 - Works out of the box on every Mac: track info requires no developer tools, thanks to a bundled adapter running on Apple-signed Perl  
   所有 Mac 开箱即用：歌曲信息不依赖任何开发者工具，由内置 adapter 借系统 Perl 读取
-- Recent-app satellites orbit below the wheel, so your last-used apps are one flick away  
-  最近使用的应用以「卫星」形式停在轮盘下缘，甩手即达
+- Recent-content satellites orbit below the wheel for apps and folders; files and websites stay only where you placed them
+  最近使用的应用和文件夹以「卫星」形式停在轮盘下缘；文件和网址只保留在固定槽位
 - Dock-style notification badges on wheel slots and satellites  
   槽位和卫星显示与 Dock 一致的未读角标
 - Right-click a running app to quit it without leaving the wheel  

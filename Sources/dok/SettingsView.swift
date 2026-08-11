@@ -3,7 +3,39 @@ import AppKit
 import ApplicationServices
 import ServiceManagement
 
-private enum SettingsTab: String, CaseIterable, Identifiable {
+private enum SettingsDesign {
+    static let contentWidth: CGFloat = 700
+    static let groupRadius: CGFloat = 11
+    static let groupStrokeOpacity: Double = 0.08
+    static let groupFillOpacity: Double = 0.9
+    static let rowHeight: CGFloat = 46
+    static let contentGap: CGFloat = 14
+}
+
+private struct SettingsGroupSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(SettingsDesign.groupFillOpacity),
+                in: RoundedRectangle(cornerRadius: SettingsDesign.groupRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: SettingsDesign.groupRadius, style: .continuous)
+                    .strokeBorder(
+                        Color.primary.opacity(SettingsDesign.groupStrokeOpacity),
+                        lineWidth: 1
+                    )
+            }
+    }
+}
+
+private extension View {
+    func settingsGroupSurface() -> some View {
+        modifier(SettingsGroupSurface())
+    }
+}
+
+enum SettingsTab: String, CaseIterable, Identifiable {
     case apps
     case general
 
@@ -13,13 +45,6 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .apps: return Loc.string("settings.tab.wheel")
         case .general: return Loc.string("settings.tab.general")
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .apps: return Loc.string("settings.tab.wheel.subtitle")
-        case .general: return Loc.string("settings.tab.general.subtitle")
         }
     }
 
@@ -33,19 +58,12 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
-
-    @State private var selectedTab: SettingsTab = .apps
+    let selectedTab: SettingsTab
 
     var body: some View {
-        HStack(spacing: 0) {
-            SettingsSidebar(selectedTab: $selectedTab)
-
-            Divider()
-
-            settingsContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: .windowBackgroundColor))
-        }
+        settingsContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
         .frame(width: 920, height: 520)
     }
 
@@ -59,80 +77,6 @@ struct SettingsView: View {
             GeneralSettingsView()
                 .environmentObject(appState)
         }
-    }
-}
-
-private struct SettingsSidebar: View {
-    @Binding var selectedTab: SettingsTab
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            VStack(spacing: 4) {
-                ForEach(SettingsTab.allCases) { tab in
-                    SettingsSidebarButton(
-                        tab: tab,
-                        isSelected: selectedTab == tab
-                    ) {
-                        NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                            selectedTab = tab
-                        }
-                    }
-                }
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
-        .frame(width: 172)
-        .frame(maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
-    }
-}
-
-private struct SettingsSidebarButton: View {
-    let tab: SettingsTab
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: tab.symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(width: 22)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(tab.title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(tab.subtitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(isSelected ? .secondary : .tertiary)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(isSelected ? .primary : .secondary)
-            .padding(.horizontal, 12)
-            .frame(height: 58)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.18) : Color.clear, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.clear)
-        .contentShape(Rectangle())
     }
 }
 
@@ -150,8 +94,21 @@ struct AppsSettingsView: View {
     private let pieSize: CGFloat = 476
     private var previewMenuRadius: CGFloat { appState.settings.menuRadius }
     private var previewOuterDiameter: CGFloat { (previewMenuRadius + 50) * 2 }
-    private var scale: CGFloat {
+    private var baseScale: CGFloat {
         min((pieSize - 28) / previewOuterDiameter, 1.12)
+    }
+    private var previewRecentApps: [AppItem] {
+        appState.recentContentForSettingsPreview()
+    }
+    private var satelliteFitScale: CGFloat {
+        let fixedSatelliteSpacing = RecentAppSatelliteGeometry.edgeGap
+            + RecentAppSatelliteGeometry.glassPadding * 2
+        let scalableExtent = previewMenuRadius + 50
+            + appState.settings.iconSize * RecentAppSatelliteGeometry.iconScale
+        return (pieSize / 2 - 4 - fixedSatelliteSpacing) / scalableExtent
+    }
+    private var scale: CGFloat {
+        previewRecentApps.isEmpty ? baseScale : min(baseScale, satelliteFitScale)
     }
     private var iconOrbitRadius: CGFloat { previewMenuRadius * scale }
     private var ringThickness: CGFloat { 100 * scale }
@@ -160,6 +117,11 @@ struct AppsSettingsView: View {
     private var center: CGFloat { pieSize / 2 }
     private var wheelDiameter: CGFloat { outerRadius * 2 }
     private var iconSize: CGFloat { appState.settings.iconSize * scale }
+    private var recentPreviewYOffset: CGFloat {
+        guard !previewRecentApps.isEmpty else { return 0 }
+        let satelliteDiameter = RecentAppSatelliteGeometry.baseDiameter(for: iconSize)
+        return -(RecentAppSatelliteGeometry.edgeGap + satelliteDiameter) / 2
+    }
     private var glassMaterialIntensity: Double {
         DokGlassMaterial.intensity(for: appState.settings.menuOpacity)
     }
@@ -181,15 +143,15 @@ struct AppsSettingsView: View {
 
     private let maxSlots = AppState.maxSlots
 
-    private func addFileOrFolder() {
+    private func addFileSystemItem(chooseFolder: Bool) {
         guard appState.settings.apps.count < maxSlots else { return }
         let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
+        panel.canChooseFiles = !chooseFolder
+        panel.canChooseDirectories = chooseFolder
         panel.allowsMultipleSelection = false
         panel.resolvesAliases = true
         panel.prompt = Loc.string("openPanel.add")
-        panel.message = Loc.string("openPanel.fileOrFolder.message")
+        panel.message = Loc.string(chooseFolder ? "openPanel.folder.message" : "openPanel.file.message")
         if panel.runModal() == .OK, let url = panel.url {
             let bookmarkData = try? url.bookmarkData(
                 options: [.withSecurityScope],
@@ -211,6 +173,59 @@ struct AppsSettingsView: View {
         }
     }
 
+    private func addWebLink() {
+        guard appState.settings.apps.count < maxSlots else { return }
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.placeholderString = Loc.string("link.placeholder")
+
+        let alert = NSAlert()
+        alert.messageText = Loc.string("link.title")
+        alert.informativeText = Loc.string("link.message")
+        alert.alertStyle = .informational
+        alert.accessoryView = field
+        alert.addButton(withTitle: Loc.string("link.add"))
+        alert.addButton(withTitle: Loc.string("link.cancel"))
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let url = AppItem.normalizedWebURL(from: field.stringValue) else {
+            let invalidAlert = NSAlert()
+            invalidAlert.messageText = Loc.string("link.invalid.title")
+            invalidAlert.informativeText = Loc.string("link.invalid.message")
+            invalidAlert.alertStyle = .warning
+            invalidAlert.runModal()
+            return
+        }
+
+        let item = AppItem(
+            name: url.host ?? url.absoluteString,
+            bundleIdentifier: "",
+            path: url.absoluteString,
+            itemType: .webLink
+        )
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            appState.settings.apps.append(item)
+        }
+        IconCache.shared.invalidate()
+    }
+
+    private func restoreDefaultsWithConfirmation() {
+        let alert = NSAlert()
+        alert.messageText = Loc.string("settings.restoreDefaults.confirm.title")
+        alert.informativeText = Loc.string("settings.restoreDefaults.confirm.message")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: Loc.string("settings.restoreDefaults.confirm.action"))
+        alert.addButton(withTitle: Loc.string("settings.restoreDefaults.confirm.cancel"))
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            selectedIndex = nil
+            appState.settings.apps = Array(AppState.defaultApps().prefix(maxSlots))
+        }
+    }
+
     private var appsPreviewPane: some View {
         wheelStage
             .frame(width: 500, height: 500, alignment: .center)
@@ -227,8 +242,12 @@ struct AppsSettingsView: View {
 
             pieRing
             pieIcons
+            recentPreviewSatellites
         }
         .frame(width: pieSize, height: pieSize)
+        .offset(y: recentPreviewYOffset)
+        .animation(.easeInOut(duration: 0.2), value: appState.settings.showRecentApps)
+        .animation(.easeInOut(duration: 0.2), value: appState.settings.recentAppCount)
         .onTapGesture {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.65)) {
                 selectedIndex = nil
@@ -237,7 +256,7 @@ struct AppsSettingsView: View {
     }
 
     private var appsControlPane: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             controlList
             recentAppsControl
         }
@@ -245,11 +264,10 @@ struct AppsSettingsView: View {
     }
 
     private var recentAppsControl: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(Loc.string("settings.recentApps"))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Toggle("", isOn: $appState.settings.showRecentApps)
                     .labelsHidden()
@@ -266,15 +284,8 @@ struct AppsSettingsView: View {
             .pickerStyle(.segmented)
             .disabled(!appState.settings.showRecentApps)
         }
-        .padding(12)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.72),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-        }
+        .padding(14)
+        .settingsGroupSurface()
     }
 
     private var controlList: some View {
@@ -296,7 +307,29 @@ struct AppsSettingsView: View {
                 subtitle: Loc.string("settings.addFolder.subtitle"),
                 icon: "folder.badge.plus"
             ) {
-                addFileOrFolder()
+                addFileSystemItem(chooseFolder: true)
+            }
+
+            Divider()
+                .padding(.leading, 44)
+
+            actionTile(
+                Loc.string("settings.addFile"),
+                subtitle: Loc.string("settings.addFile.subtitle"),
+                icon: "doc.badge.plus"
+            ) {
+                addFileSystemItem(chooseFolder: false)
+            }
+
+            Divider()
+                .padding(.leading, 44)
+
+            actionTile(
+                Loc.string("settings.addLink"),
+                subtitle: Loc.string("settings.addLink.subtitle"),
+                icon: "link.badge.plus"
+            ) {
+                addWebLink()
             }
 
             Divider()
@@ -305,39 +338,39 @@ struct AppsSettingsView: View {
             actionTile(
                 Loc.string("settings.restoreDefaults"),
                 subtitle: Loc.string("settings.restoreDefaults.subtitle"),
-                icon: "arrow.counterclockwise"
+                icon: "arrow.counterclockwise",
+                isDestructive: true
             ) {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                    selectedIndex = nil
-                    appState.settings.apps = Array(AppState.defaultApps().prefix(maxSlots))
-                }
+                restoreDefaultsWithConfirmation()
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-        }
+        .settingsGroupSurface()
     }
 
     private func actionTile(
         _ title: String,
         subtitle: String,
         icon: String,
+        isDestructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .frame(width: 24)
+                    .foregroundStyle(isDestructive ? Color.red : Color.accentColor)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        (isDestructive ? Color.red : Color.accentColor).opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10.5, weight: .regular))
                         .foregroundStyle(.tertiary)
                 }
 
@@ -347,7 +380,7 @@ struct AppsSettingsView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12)
-            .frame(height: 64)
+            .frame(height: 56)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -455,6 +488,69 @@ struct AppsSettingsView: View {
             let displaySlot = preview.firstIndex(of: index) ?? index
             pieIcon(app: app, index: index, displaySlot: displaySlot, total: total)
         }
+    }
+
+    @ViewBuilder
+    private var recentPreviewSatellites: some View {
+        let apps = previewRecentApps
+        let offsets = RecentAppSatelliteGeometry.offsets(
+            count: apps.count,
+            outerRadius: outerRadius,
+            mainIconSize: iconSize
+        )
+
+        ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
+            if index < offsets.count {
+                recentPreviewSatellite(app)
+                    .position(
+                        x: center + offsets[index].x,
+                        y: center + offsets[index].y
+                    )
+            }
+        }
+    }
+
+    private func recentPreviewSatellite(_ app: AppItem) -> some View {
+        let satelliteIconSize = RecentAppSatelliteGeometry.iconSize(for: iconSize)
+        let baseDiameter = RecentAppSatelliteGeometry.baseDiameter(for: iconSize)
+
+        return ZStack {
+            NativeGlassSamplingLayer(
+                cornerRadius: baseDiameter / 2,
+                intensity: glassMaterialIntensity
+            )
+            Circle()
+                .stroke(Color.white.opacity(0.22 * glassMaterialIntensity), lineWidth: 0.55)
+
+            Image(nsImage: app.icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: satelliteIconSize, height: satelliteIconSize)
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: app.itemType == .app ? satelliteIconSize * 0.22 : 0,
+                        style: .continuous
+                    )
+                )
+
+            Image(systemName: "clock.fill")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.72))
+                .frame(width: 15, height: 15)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.32), lineWidth: 0.5))
+                .offset(x: baseDiameter * 0.31, y: baseDiameter * 0.31)
+
+            if app.isRunning {
+                Circle()
+                    .fill(.primary)
+                    .frame(width: 4, height: 4)
+                    .opacity(0.85)
+                    .offset(y: baseDiameter / 2 + 5)
+            }
+        }
+        .frame(width: baseDiameter, height: baseDiameter)
+        .allowsHitTesting(false)
     }
 
     private func slotPosition(slot: Int, total: Int) -> (x: CGFloat, y: CGFloat) {
@@ -701,19 +797,15 @@ private struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+                .padding(.top, 11)
+                .padding(.bottom, 7)
 
             content
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-        }
+        .settingsGroupSurface()
     }
 }
 
@@ -776,7 +868,7 @@ private struct SettingRow<Accessory: View>: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
 
             Spacer(minLength: 8)
@@ -784,7 +876,7 @@ private struct SettingRow<Accessory: View>: View {
                 .controlSize(.small)
         }
         .padding(.horizontal, 14)
-        .frame(height: 44)
+        .frame(height: SettingsDesign.rowHeight)
     }
 }
 
@@ -800,17 +892,21 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            triggerGroup
-            wheelGroup
-
-            HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: SettingsDesign.contentGap) {
+            VStack(spacing: SettingsDesign.contentGap) {
+                triggerGroup
                 playbackGroup
                 feedbackGroup
+            }
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: SettingsDesign.contentGap) {
+                wheelGroup
                 systemGroup
             }
+            .frame(maxWidth: .infinity)
         }
-        .frame(width: 700)
+        .frame(width: SettingsDesign.contentWidth)
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -821,53 +917,47 @@ struct GeneralSettingsView: View {
 
     private var triggerGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.trigger")) {
-            // 键盘与鼠标是并列的两种唤出方式，并排展示让关系一目了然。
-            HStack(spacing: 0) {
-                HotkeyRecorderRow(appState: appState)
-                    .frame(maxWidth: .infinity)
+            HotkeyRecorderRow(appState: appState)
+                .frame(height: SettingsDesign.rowHeight)
 
-                Divider()
-                    .frame(height: 28)
+            SettingDivider()
 
-                inlineSetting(title: Loc.string("settings.mouse")) {
-                    Picker("", selection: $appState.settings.mouseTrigger) {
-                        ForEach(MouseTrigger.allCases, id: \.self) { trigger in
-                            Text(trigger.displayName).tag(trigger)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 126)
-                    .onChange(of: appState.settings.mouseTrigger) { _ in
-                        NotificationCenter.default.post(name: .mouseTriggerChanged, object: nil)
+            SettingRow(title: Loc.string("settings.mouse")) {
+                Picker("", selection: $appState.settings.mouseTrigger) {
+                    ForEach(MouseTrigger.allCases, id: \.self) { trigger in
+                        Text(trigger.displayName).tag(trigger)
                     }
                 }
+                .labelsHidden()
+                .frame(width: 142)
+                .onChange(of: appState.settings.mouseTrigger) { _ in
+                    NotificationCenter.default.post(name: .mouseTriggerChanged, object: nil)
+                }
             }
-            .frame(height: 48)
 
             // 鼠标触发依赖辅助功能权限，未授权时静默失效，这里显式提示。
             if appState.settings.mouseTrigger != .none {
+                SettingDivider()
                 AccessibilityPermissionRow()
             }
 
             SettingDivider()
 
-            inlineSetting(title: Loc.string("settings.mode")) {
+            SettingRow(title: Loc.string("settings.mode")) {
                 Picker("", selection: $appState.settings.interactionMode) {
                     Text(Loc.string("mode.click")).tag(InteractionMode.click)
                     Text(Loc.string("mode.hold")).tag(InteractionMode.hold)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 126)
+                .frame(width: 142)
             }
-            .frame(height: 44)
         }
     }
 
     private var playbackGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.playback")) {
             toggleCell(title: Loc.string("settings.nowPlaying"), isOn: $appState.settings.showMusicControl)
-                .frame(height: 44)
         }
         .frame(maxWidth: .infinity)
     }
@@ -875,47 +965,41 @@ struct GeneralSettingsView: View {
     private var feedbackGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.feedback")) {
             toggleCell(title: Loc.string("settings.haptics"), isOn: $appState.settings.hapticFeedback)
-                .frame(height: 44)
 
             SettingDivider()
 
             toggleCell(title: Loc.string("settings.sound"), isOn: $appState.settings.soundEffects)
-                .frame(height: 44)
         }
         .frame(maxWidth: .infinity)
     }
 
     private var wheelGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.wheel")) {
-            HStack(spacing: 0) {
-                inlineSetting(title: Loc.string("settings.position")) {
-                    Picker("", selection: $appState.settings.menuPosition) {
-                        Text(Loc.string("position.mouse")).tag(MenuPosition.followMouse)
-                        Text(Loc.string("position.center")).tag(MenuPosition.screenCenter)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 136)
+            SettingRow(title: Loc.string("settings.position")) {
+                Picker("", selection: $appState.settings.menuPosition) {
+                    Text(Loc.string("position.mouse")).tag(MenuPosition.followMouse)
+                    Text(Loc.string("position.center")).tag(MenuPosition.screenCenter)
                 }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 154)
+            }
 
-                Divider()
-                    .frame(height: 28)
+            SettingDivider()
 
-                inlineSetting(title: Loc.string("settings.theme")) {
-                    Picker("", selection: $appState.settings.appearanceMode) {
-                        Text(Loc.string("theme.system")).tag(AppearanceMode.system)
-                        Text(Loc.string("theme.light")).tag(AppearanceMode.light)
-                        Text(Loc.string("theme.dark")).tag(AppearanceMode.dark)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 154)
-                    .onChange(of: appState.settings.appearanceMode) { _ in
-                        NotificationCenter.default.post(name: .appearanceChanged, object: nil)
-                    }
+            SettingRow(title: Loc.string("settings.theme")) {
+                Picker("", selection: $appState.settings.appearanceMode) {
+                    Text(Loc.string("theme.system")).tag(AppearanceMode.system)
+                    Text(Loc.string("theme.light")).tag(AppearanceMode.light)
+                    Text(Loc.string("theme.dark")).tag(AppearanceMode.dark)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 154)
+                .onChange(of: appState.settings.appearanceMode) { _ in
+                    NotificationCenter.default.post(name: .appearanceChanged, object: nil)
                 }
             }
-            .frame(height: 48)
 
             SettingDivider()
 
@@ -942,7 +1026,7 @@ struct GeneralSettingsView: View {
                     percentage: true
                 )
             }
-            .frame(height: 68)
+            .frame(height: 72)
         }
     }
 
@@ -982,7 +1066,7 @@ struct GeneralSettingsView: View {
     ) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
 
             Spacer(minLength: 8)
             accessory()
@@ -998,7 +1082,7 @@ struct GeneralSettingsView: View {
     ) -> some View {
         HStack(spacing: 6) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 6)
             Toggle("", isOn: isOn)
@@ -1006,6 +1090,7 @@ struct GeneralSettingsView: View {
                 .controlSize(.small)
         }
         .padding(.horizontal, 14)
+        .frame(height: SettingsDesign.rowHeight)
         .frame(maxWidth: .infinity)
     }
 
@@ -1019,10 +1104,10 @@ struct GeneralSettingsView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                 Spacer()
                 Text(percentage ? "\(Int(round(value.wrappedValue * 100)))%" : "\(Int(value.wrappedValue))")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
@@ -1072,20 +1157,20 @@ struct HotkeyRecorderRow: View {
         } label: {
             HStack(spacing: 10) {
                 Text(Loc.string("settings.hotkey"))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
 
                 Spacer(minLength: 10)
 
                 if isRecording {
                     Text(Loc.string("hotkey.recording"))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.accentColor)
                         .transition(.opacity)
                 } else {
                     HStack(spacing: 8) {
                         Text(Loc.string("settings.changeHotkey"))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
 
                         HStack(spacing: 2) {
                             ForEach(modifierSymbols, id: \.self) { sym in
@@ -1094,10 +1179,6 @@ struct HotkeyRecorderRow: View {
                             KeyCap(HotkeyConfig.keyCodeToString(appState.settings.hotkey.keyCode))
                         }
                     }
-                    .padding(.leading, 10)
-                    .padding(.trailing, 6)
-                    .padding(.vertical, 4)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .transition(.opacity)
                 }
             }

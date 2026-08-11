@@ -499,14 +499,21 @@ struct DokWheelView: View {
             Circle()
                 .stroke(Color.white.opacity(0.22 * glassMaterialIntensity), lineWidth: 0.55)
 
-            Image(nsImage: app.icon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: satelliteIconSize, height: satelliteIconSize)
-                .clipShape(RoundedRectangle(
-                    cornerRadius: satelliteIconSize * 0.22,
-                    style: .continuous
-                ))
+            if app.itemType == .app {
+                Image(nsImage: app.icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: satelliteIconSize, height: satelliteIconSize)
+                    .clipShape(RoundedRectangle(
+                        cornerRadius: satelliteIconSize * 0.22,
+                        style: .continuous
+                    ))
+            } else {
+                Image(nsImage: app.icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: satelliteIconSize, height: satelliteIconSize)
+            }
 
             Image(systemName: "clock.fill")
                 .font(.system(size: 8, weight: .semibold))

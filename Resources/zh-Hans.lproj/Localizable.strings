@@ -23,15 +23,32 @@
 "onboarding.openAccessibility" = "打开辅助功能设置";
 
 "openPanel.add" = "添加";
-"openPanel.fileOrFolder.message" = "选择要添加到轮盘的文件或文件夹";
+"openPanel.folder.message" = "选择要添加到轮盘的文件夹";
+"openPanel.file.message" = "选择要添加到轮盘的文件";
+
+"link.title" = "添加网址";
+"link.message" = "输入网址，dok 会使用默认浏览器打开。";
+"link.placeholder" = "example.com";
+"link.add" = "添加";
+"link.cancel" = "取消";
+"link.invalid.title" = "网址无效";
+"link.invalid.message" = "请输入有效的 http 或 https 网址。";
 
 "settings.addApp" = "添加应用";
 "settings.addApp.subtitle" = "从应用程序选择";
 "settings.addFolder" = "添加文件夹";
-"settings.addFolder.subtitle" = "文件或文件夹都可以";
+"settings.addFolder.subtitle" = "选择一个文件夹";
+"settings.addFile" = "添加文件";
+"settings.addFile.subtitle" = "选择文档或其他文件";
+"settings.addLink" = "添加网址";
+"settings.addLink.subtitle" = "使用默认浏览器打开";
 "settings.restoreDefaults" = "恢复默认";
 "settings.restoreDefaults.subtitle" = "重新放回系统常用项";
-"settings.recentApps" = "最近应用";
+"settings.restoreDefaults.confirm.title" = "恢复默认轮盘？";
+"settings.restoreDefaults.confirm.message" = "当前轮盘中的应用、文件、文件夹和网址将被系统常用项替换。此操作无法撤销。";
+"settings.restoreDefaults.confirm.action" = "恢复默认";
+"settings.restoreDefaults.confirm.cancel" = "取消";
+"settings.recentApps" = "最近内容";
 
 "wheel.releaseToDelete" = "松开删除";
 "wheel.dragToCenter" = "拖至中心";

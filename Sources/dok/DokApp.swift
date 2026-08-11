@@ -13,11 +13,12 @@ enum DokEntry {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
     var statusItem: NSStatusItem!
     var appState = AppState()
     var wheelWindow: DokWheelWindow?
     var settingsWindow: NSWindow?
+    private var settingsHostingController: NSHostingController<AnyView>?
     var hotKeyRef: EventHotKeyRef?
     var isMenuOpen = false
     private var settingsKeyMonitor: Any?
@@ -25,6 +26,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var mouseUpMonitor: Any?
     private var mouseEventTap: CFMachPort?
     private var mouseEventRunLoopSource: CFRunLoopSource?
+    private let settingsToolbarIdentifier = NSToolbar.Identifier("dok.settings.toolbar")
+    private let wheelSettingsItemIdentifier = NSToolbarItem.Identifier("dok.settings.wheel")
+    private let generalSettingsItemIdentifier = NSToolbarItem.Identifier("dok.settings.general")
+    private let selectedSettingsPaneDefaultsKey = "dok.settings.selectedPane"
+    private lazy var selectedSettingsTab: SettingsTab = {
+        guard let rawValue = UserDefaults.standard.string(forKey: selectedSettingsPaneDefaultsKey),
+              let tab = SettingsTab(rawValue: rawValue) else {
+            return .apps
+        }
+        return tab
+    }()
 
     private var showMenuTitle: String {
         Loc.string("menu.show")
@@ -210,7 +222,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 self.wheelWindow?.launchApp(app) ?? {
                     if app.itemType == .fileOrFolder {
+                        self.appState.recordOpenedFolder(app)
                         app.openFileOrFolder()
+                    } else if app.itemType == .webLink {
+                        app.openWebLink()
                     } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
                         let config = NSWorkspace.OpenConfiguration()
                         config.activates = true
@@ -480,7 +495,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self.wheelWindow?.launchApp(app) ?? {
                         // wheelWindow 已关闭，直接启动
                         if app.itemType == .fileOrFolder {
+                            self.appState.recordOpenedFolder(app)
                             app.openFileOrFolder()
+                        } else if app.itemType == .webLink {
+                            app.openWebLink()
                         } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
                             let config = NSWorkspace.OpenConfiguration()
                             config.activates = true
@@ -544,15 +562,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupMainMenu()
 
         if settingsWindow == nil {
-            let settingsView = SettingsView()
-                .environmentObject(appState)
+            let settingsView = AnyView(
+                SettingsView(selectedTab: selectedSettingsTab)
+                    .environmentObject(appState)
+            )
             let hostingController = NSHostingController(rootView: settingsView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = Loc.string("settings.windowTitle")
+            window.title = selectedSettingsTab.title
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.setContentSize(NSSize(width: 920, height: 520))
+            configureSettingsToolbar(for: window)
+            window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
             window.center()
             window.delegate = self
+            self.settingsHostingController = hostingController
             self.settingsWindow = window
         }
         applySettingsAppearance()
@@ -582,6 +606,80 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func configureSettingsToolbar(for window: NSWindow) {
+        let toolbar = NSToolbar(identifier: settingsToolbarIdentifier)
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.displayMode = .iconAndLabel
+        toolbar.selectedItemIdentifier = toolbarItemIdentifier(for: selectedSettingsTab)
+        window.toolbarStyle = .preference
+        window.toolbar = toolbar
+    }
+
+    private func toolbarItemIdentifier(for tab: SettingsTab) -> NSToolbarItem.Identifier {
+        switch tab {
+        case .apps: return wheelSettingsItemIdentifier
+        case .general: return generalSettingsItemIdentifier
+        }
+    }
+
+    private func settingsTab(for identifier: NSToolbarItem.Identifier) -> SettingsTab? {
+        switch identifier {
+        case wheelSettingsItemIdentifier: return .apps
+        case generalSettingsItemIdentifier: return .general
+        default: return nil
+        }
+    }
+
+    @objc private func selectSettingsPane(_ sender: NSToolbarItem) {
+        guard let tab = settingsTab(for: sender.itemIdentifier) else { return }
+        showSettingsPane(tab)
+    }
+
+    private func showSettingsPane(_ tab: SettingsTab) {
+        guard tab != selectedSettingsTab else { return }
+
+        NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
+        selectedSettingsTab = tab
+        UserDefaults.standard.set(tab.rawValue, forKey: selectedSettingsPaneDefaultsKey)
+        settingsHostingController?.rootView = AnyView(
+            SettingsView(selectedTab: tab)
+                .environmentObject(appState)
+        )
+        settingsWindow?.title = tab.title
+        settingsWindow?.toolbar?.selectedItemIdentifier = toolbarItemIdentifier(for: tab)
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [wheelSettingsItemIdentifier, generalSettingsItemIdentifier]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [wheelSettingsItemIdentifier, generalSettingsItemIdentifier]
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [wheelSettingsItemIdentifier, generalSettingsItemIdentifier]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard let tab = settingsTab(for: itemIdentifier) else { return nil }
+
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = tab.title
+        item.paletteLabel = tab.title
+        item.toolTip = tab.title
+        item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
+        item.target = self
+        item.action = #selector(selectSettingsPane(_:))
+        return item
+    }
+
     func applySettingsAppearance() {
         switch appState.settings.appearanceMode {
         case .light: settingsWindow?.appearance = NSAppearance(named: .aqua)
@@ -597,6 +695,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             settingsKeyMonitor = nil
         }
         settingsWindow = nil
+        settingsHostingController = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             NSApp.setActivationPolicy(.accessory)
         }

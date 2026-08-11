@@ -115,7 +115,7 @@ def main() -> None:
     )
     assert vendor_diff.returncode == 0, "Vendor must remain byte-for-byte unchanged"
 
-    assert (ROOT / "dist" / "Arcly-1.0.1.dmg").exists(), "historical DMG must remain untouched"
+    assert (ROOT / "dist" / "dok-1.1.0.dmg").exists(), "current dok DMG must remain available"
     print("dok rename contract passed.")
 
 

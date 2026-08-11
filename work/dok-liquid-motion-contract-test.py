@@ -77,7 +77,6 @@ def main() -> None:
         ("self.alphaValue = MenuMotion.windowWarmupAlpha", "cached native glass frame hidden before presentation"),
         ("self.orderFrontRegardless()", "desktop-Space-safe window presentation"),
         ("MenuMotion.glassSamplerWarmupDelay", "deferred reveal waits for native sampling"),
-        ("withAnimation(MenuMotion.menuAnimation(isVisible: true))", "animated visible-state flip"),
         ("self.appState.isMenuVisible = true", "visible state set after presentation"),
         ("context.duration = MenuMotion.windowRevealDuration", "window fade starts with content reveal"),
         ("context.timingFunction = CAMediaTimingFunction(name: .easeOut)", "window reveal uses an ease-out curve"),
@@ -90,6 +89,14 @@ def main() -> None:
 
     for needle, reason in window_requirements:
         require(window_source, needle, reason)
+
+    forbid(
+        window_source,
+        "withAnimation(MenuMotion.menuAnimation",
+        "duplicate window-side animation transaction around the view-owned content transition",
+    )
+    if window_source.count("self.orderFrontRegardless()") != 1:
+        raise AssertionError("Wheel presentation must issue exactly one orderFrontRegardless call")
 
     forbid(source, ".id(centerContentIdentity)", "center content forced rebuild")
     forbid(source, "revealMask", "synthetic expanding glass animation")

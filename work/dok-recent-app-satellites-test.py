@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""最近应用卫星的持久化、快照、布局、状态与交互契约。"""
+"""最近内容卫星的持久化、筛选、快照、布局、状态与交互契约。"""
 from pathlib import Path
 
 
@@ -27,7 +27,13 @@ def main() -> None:
         ("$0.bundleIdentifier != bundleIdentifier", "MRU de-duplication"),
         ("item.bundleIdentifier != ownBundleIdentifier", "dok exclusion"),
         ("!fixedBundleIdentifiers.contains(item.bundleIdentifier)", "fixed-slot exclusion"),
+        ("func recordOpenedFolder(_ item: AppItem)", "folder MRU recording"),
+        ("guard item.itemType == .fileOrFolder, item.isFolder", "folder-only recent file-system content"),
+        ("private func eligibleRecentContent", "shared app/folder eligibility filter"),
+        ("case .webLink:", "website exclusion from recent content"),
+        ("return false", "ineligible file and website rejection"),
         ("func snapshotRecentApps()", "presentation snapshot"),
+        ("func recentContentForSettingsPreview()", "settings preview snapshot"),
         ("settings.showRecentApps", "visibility-gated snapshot"),
         ("Array(eligible.prefix(settings.recentAppCount))", "count-limited snapshot"),
         ("recentActivatedBundleIdentifiers", "shared activation MRU for player routing"),
@@ -72,13 +78,18 @@ def main() -> None:
     )
     assert '$appState.settings.showRecentApps' in SETTINGS
     assert '$appState.settings.recentAppCount' in SETTINGS
+    assert 'appState.recentContentForSettingsPreview()' in SETTINGS
+    assert 'private var recentPreviewSatellites' in SETTINGS
+    assert 'RecentAppSatelliteGeometry.offsets(' in SETTINGS
+    assert 'private func recentPreviewSatellite' in SETTINGS
+    assert '.allowsHitTesting(false)' in SETTINGS
     assert 'ForEach(1...4, id: \.self)' in SETTINGS
     assert '.disabled(!appState.settings.showRecentApps)' in SETTINGS
     assert 'Loc.string("settings.recentApps")' in SETTINGS
-    assert '"settings.recentApps" = "Recent Apps";' in EN
-    assert '"settings.recentApps" = "最近应用";' in ZH
+    assert '"settings.recentApps" = "Recent Content";' in EN
+    assert '"settings.recentApps" = "最近内容";' in ZH
 
-    print("Recent-app satellites contract passed.")
+    print("Recent-content satellites contract passed.")
 
 
 if __name__ == "__main__":

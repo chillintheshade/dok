@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Carbon
+import UniformTypeIdentifiers
 
 extension Notification.Name {
     static let hotkeyChanged = Notification.Name("dok.hotkeyChanged")
@@ -15,6 +16,7 @@ extension Notification.Name {
 enum WheelItemType: String, Codable {
     case app = "app"
     case fileOrFolder = "fileOrFolder"
+    case webLink = "webLink"
 }
 
 struct AppItem: Identifiable, Codable, Equatable {
@@ -32,6 +34,34 @@ struct AppItem: Identifiable, Codable, Equatable {
 
     func resolvedFileURL() -> URL {
         Self.resolvingAliasIfNeeded(securityScopedFileURL())
+    }
+
+    var isFolder: Bool {
+        guard itemType == .fileOrFolder else { return false }
+        let url = resolvedFileURL()
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
+        }
+        return (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+    }
+
+    var webURL: URL? {
+        guard itemType == .webLink else { return nil }
+        return Self.normalizedWebURL(from: path)
+    }
+
+    static func normalizedWebURL(from value: String) -> URL? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let url = URL(string: candidate),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil else {
+            return nil
+        }
+        return url
     }
 
     private func securityScopedFileURL() -> URL {
@@ -54,6 +84,9 @@ struct AppItem: Identifiable, Codable, Equatable {
 
     /// 实际加载逻辑（仅由 IconCache 调用一次）
     func resolveDisplayName() -> String {
+        if itemType == .webLink {
+            return name.isEmpty ? (webURL?.host ?? path) : name
+        }
         if itemType == .fileOrFolder {
             let url = resolvedFileURL()
             let didAccess = url.startAccessingSecurityScopedResource()
@@ -83,6 +116,9 @@ struct AppItem: Identifiable, Codable, Equatable {
     }
 
     func loadIcon() -> NSImage {
+        if itemType == .webLink {
+            return NSWorkspace.shared.icon(for: .url)
+        }
         if itemType == .fileOrFolder {
             if let customIconData, let image = NSImage(data: customIconData) {
                 return image
@@ -190,6 +226,14 @@ struct AppItem: Identifiable, Codable, Equatable {
                 scopedURL.stopAccessingSecurityScopedResource()
             }
         }
+    }
+
+    func openWebLink() {
+        guard let webURL else {
+            NSLog("❌ 无效网址: %@", path)
+            return
+        }
+        NSWorkspace.shared.open(webURL)
     }
 
     var isRunning: Bool {
@@ -509,7 +553,14 @@ final class IconCache {
     private var nameCache: [String: String] = [:]
 
     private func cacheKey(for app: AppItem) -> String {
-        app.itemType == .fileOrFolder ? app.path : app.bundleIdentifier
+        switch app.itemType {
+        case .app:
+            return "app:\(app.bundleIdentifier)"
+        case .fileOrFolder:
+            return "file:\(app.path)"
+        case .webLink:
+            return "url:\(app.path)"
+        }
     }
 
     func icon(for app: AppItem) -> NSImage {
@@ -583,7 +634,9 @@ class AppState: ObservableObject {
             self.settings.apps = Self.defaultApps()
         }
 
-        recentActivatedBundleIdentifiers = settings.recentApps.map(\.bundleIdentifier)
+        recentActivatedBundleIdentifiers = settings.recentApps.compactMap { item in
+            item.itemType == .app && !item.bundleIdentifier.isEmpty ? item.bundleIdentifier : nil
+        }
         nowPlaying.recentMusicAppBundleIdentifiers = { [weak self] in
             self?.recentActivatedBundleIdentifiers ?? []
         }
@@ -610,7 +663,7 @@ class AppState: ObservableObject {
     }
 
     func snapshotRecentApps() {
-        let eligible = eligibleRecentApps(settings.recentApps)
+        let eligible = eligibleRecentContent(settings.recentApps)
         if eligible != settings.recentApps {
             settings.recentApps = eligible
         }
@@ -618,6 +671,22 @@ class AppState: ObservableObject {
             ? Array(eligible.prefix(settings.recentAppCount))
             : []
         selectedRecentAppIndex = nil
+    }
+
+    func recentContentForSettingsPreview() -> [AppItem] {
+        guard settings.showRecentApps else { return [] }
+        return Array(eligibleRecentContent(settings.recentApps).prefix(settings.recentAppCount))
+    }
+
+    func recordOpenedFolder(_ item: AppItem) {
+        guard item.itemType == .fileOrFolder, item.isFolder else { return }
+        let normalizedPath = item.resolvedFileURL().standardizedFileURL.path
+        var updated = settings.recentApps.filter { existing in
+            !(existing.itemType == .fileOrFolder
+                && existing.resolvedFileURL().standardizedFileURL.path == normalizedPath)
+        }
+        updated.insert(item, at: 0)
+        settings.recentApps = Array(eligibleRecentContent(updated).prefix(10))
     }
 
     func snapshotNotificationBadges() {
@@ -656,7 +725,7 @@ class AppState: ObservableObject {
         )
         var updated = settings.recentApps.filter { $0.bundleIdentifier != bundleIdentifier }
         updated.insert(recent, at: 0)
-        settings.recentApps = Array(eligibleRecentApps(updated).prefix(10))
+        settings.recentApps = Array(eligibleRecentContent(updated).prefix(10))
     }
 
     private func shouldTrackRecentApplication(bundleIdentifier: String) -> Bool {
@@ -667,21 +736,30 @@ class AppState: ObservableObject {
         }
     }
 
-    private func eligibleRecentApps(_ apps: [AppItem]) -> [AppItem] {
+    private func eligibleRecentContent(_ apps: [AppItem]) -> [AppItem] {
         let ownBundleIdentifier = Bundle.main.bundleIdentifier ?? "com.qingshan.orbis"
         let fixedBundleIdentifiers = Set(settings.apps.compactMap { item in
             item.itemType == .app && !item.bundleIdentifier.isEmpty ? item.bundleIdentifier : nil
         })
         var seen = Set<String>()
         return apps.filter { item in
-            guard item.itemType == .app,
-                  !item.bundleIdentifier.isEmpty,
-                  item.bundleIdentifier != ownBundleIdentifier,
-                  !fixedBundleIdentifiers.contains(item.bundleIdentifier),
-                  !seen.contains(item.bundleIdentifier) else {
+            let key: String
+            switch item.itemType {
+            case .app:
+                guard !item.bundleIdentifier.isEmpty,
+                      item.bundleIdentifier != ownBundleIdentifier,
+                      !fixedBundleIdentifiers.contains(item.bundleIdentifier) else {
+                    return false
+                }
+                key = "app:\(item.bundleIdentifier)"
+            case .fileOrFolder:
+                guard item.isFolder else { return false }
+                key = "folder:\(item.resolvedFileURL().standardizedFileURL.path)"
+            case .webLink:
                 return false
             }
-            seen.insert(item.bundleIdentifier)
+            guard !seen.contains(key) else { return false }
+            seen.insert(key)
             return true
         }
     }

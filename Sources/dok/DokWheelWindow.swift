@@ -184,9 +184,10 @@ class DokWheelWindow: NSWindow {
         self.displayIfNeeded()
         let reveal = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            withAnimation(MenuMotion.menuAnimation(isVisible: true)) {
-                self.appState.isMenuVisible = true
-            }
+            // DokWheelView owns the content transition. Setting the state inside a
+            // second explicit animation transaction can make the same content
+            // transition resolve twice while the native window is fading in.
+            self.appState.isMenuVisible = true
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = MenuMotion.windowRevealDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -603,7 +604,14 @@ class DokWheelWindow: NSWindow {
     func launchApp(_ app: AppItem) {
         if app.itemType == .fileOrFolder {
             NSLog("📂 Opening: %@", app.path)
+            appState.recordOpenedFolder(app)
             app.openFileOrFolder()
+            return
+        }
+
+        if app.itemType == .webLink {
+            NSLog("🔗 Opening: %@", app.path)
+            app.openWebLink()
             return
         }
 
@@ -633,9 +641,7 @@ class DokWheelWindow: NSWindow {
         removeMonitors()
         ignoresMouseEvents = true
 
-        withAnimation(MenuMotion.menuAnimation(isVisible: false)) {
-            appState.isMenuVisible = false
-        }
+        appState.isMenuVisible = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = MenuMotion.contentDismissDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)

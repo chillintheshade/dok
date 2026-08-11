@@ -2,7 +2,7 @@
 
 ## Product
 
-dok is a free macOS 26 radial launcher for apps, files, folders, and system Now Playing controls. The user-facing name is always lowercase `dok`; keep `com.qingshan.orbis` for update compatibility.
+dok is a free macOS 26 radial launcher for apps, files, folders, websites, and system Now Playing controls. The user-facing name is always lowercase `dok`; keep `com.qingshan.orbis` for update compatibility.
 
 ## Run And Verify
 
@@ -55,7 +55,7 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - Glass look is final: native `.clear` sampling with a `0.03` black tint base, no extra tone layer, native edge plus a single `0.55pt` white supplement. `menuOpacity` maps linearly to material intensity; 100% is the approved look.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
-- Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-app satellites (default 2) sit outside the wheel at 6 o'clock, snapshotted at show time; Dock notification badges render on slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
+- Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-content satellites (default 2) sit outside the wheel at 6 o'clock and include apps plus folders opened through dok, while files and websites stay fixed-slot only; Dock notification badges render on app slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
 - `dist/dok-1.1.0.dmg` is the current ad-hoc-signed self-distribution package.
 
 ## Next Release
