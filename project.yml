@@ -10,8 +10,8 @@ settings:
     SWIFT_VERSION: "5"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     PRODUCT_NAME: dok
-    MARKETING_VERSION: "1.2.1"
-    CURRENT_PROJECT_VERSION: "6"
+    MARKETING_VERSION: "1.2.2"
+    CURRENT_PROJECT_VERSION: "7"
 
 targets:
   # BSD-3 vendored framework (Vendor/MediaRemoteAdapter).
@@ -54,6 +54,7 @@ targets:
     sources:
       - path: Sources/dok
         type: group
+      - path: Resources/AppIcon.icon
       - path: Resources/Assets.xcassets
       - path: Resources/en.lproj/Localizable.strings
       - path: Resources/zh-Hans.lproj/Localizable.strings

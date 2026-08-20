@@ -49,14 +49,14 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 
 ## Current State (2026-08-20)
 
-- App version is 1.2.1; the local source and `/Applications/dok.app` include files, websites, recent-content preview, the native settings toolbar, and the black-and-white ring brand icon.
+- App version is 1.2.2; the local source and `/Applications/dok.app` include files, websites, recent-content preview, the native settings toolbar, and the full-bleed Icon Composer black-and-white ring brand icon.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
 - Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - Glass look is final: native `.clear` sampling with a `0.03` black tint base, no extra tone layer, native edge plus a single `0.55pt` white supplement. `menuOpacity` maps linearly to material intensity; 100% is the approved look.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
 - Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-content satellites (default 2) sit outside the wheel at 6 o'clock and include apps plus folders opened through dok, while files and websites stay fixed-slot only; Dock notification badges render on app slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
-- `dist/dok-1.2.1.dmg` is the current Developer ID-signed and Apple-notarized self-distribution package.
+- `dist/dok-1.2.2.dmg` is the current Developer ID-signed and Apple-notarized self-distribution package.
 
 ## Next Release
 

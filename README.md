@@ -28,15 +28,14 @@ dok currently requires macOS 26.0 or later.
 
 dok 当前需要 macOS 26.0 或更高版本。
 
-## Latest Update: 1.2.1 / 最新更新：1.2.1
+## Latest Update: 1.2.2 / 最新更新：1.2.2
 
-- New black-and-white brand icon matching the menu bar symbol / 全新黑白品牌图标，与菜单栏符号统一
-- Default shortcut is now Command-Escape, close to the left Command key without taking over Command-Grave / 默认快捷键改为 Command-Escape，靠近左 Command 且不再占用 Command-Grave
+- Rebuilt the black-and-white ring icon with macOS 26 Icon Composer so its black surface fills the native icon enclosure / 使用 macOS 26 Icon Composer 重制黑白珠环图标，黑色底面完整铺满系统图标轮廓
 - Signed with Developer ID and notarized by Apple for normal installation / 使用 Developer ID 签名并通过 Apple 公证，可直接正常安装
 
-[View the full release notes and download dok 1.2.1](https://github.com/chillintheshade/dok/releases/tag/v1.2.1)
+[View the full release notes and download dok 1.2.2](https://github.com/chillintheshade/dok/releases/tag/v1.2.2)
 
-[查看完整更新说明并下载 dok 1.2.1](https://github.com/chillintheshade/dok/releases/tag/v1.2.1)
+[查看完整更新说明并下载 dok 1.2.2](https://github.com/chillintheshade/dok/releases/tag/v1.2.2)
 
 ## Preview / 预览
 

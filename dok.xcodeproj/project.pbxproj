@@ -39,6 +39,7 @@
 		DEDDF5938A265C7FC67039E1 /* MediaRemoteAdapter.h in Headers */ = {isa = PBXBuildFile; fileRef = 463ACD172DB30F042F6B3DFE /* MediaRemoteAdapter.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		DF3B3CD8DD9929A0AC55D287 /* Debounce.h in Headers */ = {isa = PBXBuildFile; fileRef = B1EB820B838128D55CF0627A /* Debounce.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		E6422AFD7A48E844A275B6C0 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6B67DEC469E669F274947A2D /* UniformTypeIdentifiers.framework */; };
+		EC10878B731C62682DF1E124 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 31AE0177ABA61822B8424972 /* AppIcon.icon */; };
 		F53C03A1A54D48F7CF4BA3B9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 40F12C5B2BFD512DFE9A8874 /* Assets.xcassets */; };
 		F91EA9201B1459A5DF6A213E /* Debounce.m in Sources */ = {isa = PBXBuildFile; fileRef = 0C40F06CEAF0FB6BE1C8ACD9 /* Debounce.m */; };
 		FB3FDECF1FB31003BEB24153 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = DD65F64D403ED1DE3E480E39 /* Localizable.strings */; };
@@ -82,6 +83,7 @@
 		210643D78B6C7F1D32363444 /* keys.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = keys.m; sourceTree = "<group>"; };
 		25FCA73A2E8FE68E6289E953 /* now_playing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = now_playing.h; sourceTree = "<group>"; };
 		298F2CDD17FA29088F326258 /* ImageIO.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ImageIO.framework; path = System/Library/Frameworks/ImageIO.framework; sourceTree = SDKROOT; };
+		31AE0177ABA61822B8424972 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		34201C1316B05679DF2238CC /* helpers.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = helpers.m; sourceTree = "<group>"; };
 		343A90CA7ADB9E51FAB63430 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		403DBA485AE021AC057ECBCB /* mediaremote-adapter.pl */ = {isa = PBXFileReference; lastKnownFileType = text.script.perl; path = "mediaremote-adapter.pl"; sourceTree = "<group>"; };
@@ -181,6 +183,7 @@
 		196533B52E70B08A9D336524 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				31AE0177ABA61822B8424972 /* AppIcon.icon */,
 				40F12C5B2BFD512DFE9A8874 /* Assets.xcassets */,
 			);
 			path = Resources;
@@ -382,6 +385,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EC10878B731C62682DF1E124 /* AppIcon.icon in Resources */,
 				F53C03A1A54D48F7CF4BA3B9 /* Assets.xcassets in Resources */,
 				FB3FDECF1FB31003BEB24153 /* Localizable.strings in Resources */,
 				38B12F30D72FD61EE69245D5 /* Localizable.strings in Resources */,
@@ -567,7 +571,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -580,7 +584,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = dok;
@@ -625,7 +629,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -644,7 +648,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
