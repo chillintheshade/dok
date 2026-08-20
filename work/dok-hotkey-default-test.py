@@ -15,12 +15,13 @@ def main() -> None:
     source = SOURCE.read_text()
 
     requirements = [
-        ("var keyCode: UInt16 = 50 // key left of 1", "default grave key code"),
+        ("var keyCode: UInt16 = 53 // Escape", "default Escape key code"),
         ("var modifiers: NSEvent.ModifierFlags = [.command]", "command-only default modifier"),
-        ("50: \"·\"", "user-facing key label for the key left of 1"),
-        ("init(keyCode: UInt16 = 50, modifiers: NSEvent.ModifierFlags = [.command])", "default initializer uses command + grave key"),
+        ("53: \"Esc\"", "user-facing Escape key label"),
+        ("init(keyCode: UInt16 = 53, modifiers: NSEvent.ModifierFlags = [.command])", "default initializer uses command + Escape"),
         ("decoded.hotkey.keyCode == 2 && decoded.hotkey.modifiers == [.command, .shift]", "old default hotkey migration"),
-        ("重置为默认 ⌘·", "migration comment reflects new default"),
+        ("decoded.hotkey.keyCode == 50 && decoded.hotkey.modifiers == [.command]", "command-grave default migration"),
+        ("重置为默认 ⌘Esc", "migration comment reflects new default"),
     ]
 
     for needle, reason in requirements:

@@ -24,5 +24,9 @@ assert recorder.count("stopRecording()") >= 4
 assert "NSEvent.removeMonitor(m)" in recorder
 assert "localMonitor = nil" in recorder
 assert "globalMonitor = nil" in recorder
+assert "event.keyCode == 53 && mods.isEmpty" in recorder, "only bare Escape should cancel recording"
+assert recorder.index("event.keyCode == 53 && mods.isEmpty") < recorder.index("appState.settings.hotkey = HotkeyConfig"), (
+    "Command-Escape must reach hotkey assignment instead of being cancelled"
+)
 
 print("Hotkey recording cancellation contract passed.")

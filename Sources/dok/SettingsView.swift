@@ -1227,12 +1227,14 @@ struct HotkeyRecorderRow: View {
             .intersection(.deviceIndependentFlagsMask)
             .intersection([.command, .control, .option, .shift])
 
-        guard mods.contains(.command) || mods.contains(.control) || mods.contains(.option) else {
-            if event.keyCode == 53 {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                    stopRecording()
-                }
+        if event.keyCode == 53 && mods.isEmpty {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                stopRecording()
             }
+            return
+        }
+
+        guard mods.contains(.command) || mods.contains(.control) || mods.contains(.option) else {
             return
         }
 

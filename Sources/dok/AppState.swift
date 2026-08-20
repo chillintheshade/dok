@@ -413,7 +413,7 @@ enum AppearanceMode: String, Codable, CaseIterable {
 }
 
 struct HotkeyConfig: Codable {
-    var keyCode: UInt16 = 50 // key left of 1
+    var keyCode: UInt16 = 53 // Escape
     var modifiers: NSEvent.ModifierFlags = [.command]
 
     var displayString: String {
@@ -478,7 +478,7 @@ struct HotkeyConfig: Codable {
         case keyCode, rawModifiers
     }
 
-    init(keyCode: UInt16 = 50, modifiers: NSEvent.ModifierFlags = [.command]) {
+    init(keyCode: UInt16 = 53, modifiers: NSEvent.ModifierFlags = [.command]) {
         self.keyCode = keyCode
         self.modifiers = modifiers
     }
@@ -621,11 +621,15 @@ class AppState: ObservableObject {
            var decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
             // 迁移：修复旧版保存的无效快捷键（⌥Space）
             if decoded.hotkey.keyCode == 49 && decoded.hotkey.modifiers == .option {
-                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘·
+                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘Esc
             }
-            // 迁移：如果用户仍使用旧默认 ⌘⇧D，切换到新的默认 ⌘·。
+            // 迁移：如果用户仍使用旧默认 ⌘⇧D，切换到新的默认 ⌘Esc。
             if decoded.hotkey.keyCode == 2 && decoded.hotkey.modifiers == [.command, .shift] {
-                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘·
+                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘Esc
+            }
+            // 迁移：旧默认 ⌘· 会抢占 macOS 的同应用窗口切换快捷键。
+            if decoded.hotkey.keyCode == 50 && decoded.hotkey.modifiers == [.command] {
+                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘Esc
             }
             self.settings = decoded
         } else {
