@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-lightgrey">
+  <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-lightgrey">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-5-orange">
   <img alt="Language" src="https://img.shields.io/badge/language-English%20%7C%20简体中文-blue">
   <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue">
@@ -24,18 +24,19 @@ Every feature is available for free. dok has no account requirement, paid tier, 
 
 全部功能免费开放，不需要账号，没有付费分层，也没有应用内购买。
 
-dok currently requires macOS 26.0 or later.
+dok requires macOS 13.0 or later and ships as a Universal 2 app for Apple Silicon and Intel Macs. macOS 26 uses native Liquid Glass; macOS 13–15 use an adaptive compatibility material while keeping the same features and layout.
 
-dok 当前需要 macOS 26.0 或更高版本。
+dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Apple Silicon 与 Intel Mac。macOS 26 使用原生 Liquid Glass；macOS 13–15 自动使用兼容玻璃材质，功能和布局保持一致。
 
-## Latest Update: 1.2.2 / 最新更新：1.2.2
+## Latest Update: 1.3.0 / 最新更新：1.3.0
 
-- Rebuilt the black-and-white ring icon with macOS 26 Icon Composer so its black surface fills the native icon enclosure / 使用 macOS 26 Icon Composer 重制黑白珠环图标，黑色底面完整铺满系统图标轮廓
+- One Universal 2 download now supports macOS 13+, Apple Silicon, and Intel Macs / 一个 Universal 2 安装包同时支持 macOS 13+、Apple Silicon 与 Intel Mac
+- macOS 26 keeps the approved native Liquid Glass; macOS 13–15 automatically use the compatibility material / macOS 26 保持已定稿的原生 Liquid Glass，macOS 13–15 自动切换兼容玻璃材质
 - Signed with Developer ID and notarized by Apple for normal installation / 使用 Developer ID 签名并通过 Apple 公证，可直接正常安装
 
-[View the full release notes and download dok 1.2.2](https://github.com/chillintheshade/dok/releases/tag/v1.2.2)
+[View the full release notes and download dok 1.3.0](https://github.com/chillintheshade/dok/releases/tag/v1.3.0)
 
-[查看完整更新说明并下载 dok 1.2.2](https://github.com/chillintheshade/dok/releases/tag/v1.2.2)
+[查看完整更新说明并下载 dok 1.3.0](https://github.com/chillintheshade/dok/releases/tag/v1.3.0)
 
 ## Preview / 预览
 

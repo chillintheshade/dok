@@ -2,7 +2,7 @@
 
 ## Product
 
-dok is a free macOS 26 radial launcher for apps, files, folders, websites, and system Now Playing controls. The user-facing name is always lowercase `dok`; keep `com.qingshan.orbis` for update compatibility.
+dok is a free macOS 13+ radial launcher for apps, files, folders, websites, and system Now Playing controls. The user-facing name is always lowercase `dok`; keep `com.qingshan.orbis` for update compatibility. macOS 26 uses native Liquid Glass; macOS 13–15 use the compatibility material.
 
 ## Run And Verify
 
@@ -16,7 +16,7 @@ The installed development copy is `/Applications/dok.app`. Build successfully be
 
 ## Stack And Structure
 
-- SwiftUI + AppKit, Swift 5 language mode, macOS 26 deployment target.
+- SwiftUI + AppKit, Swift 5 language mode, macOS 13 deployment target, Universal 2 (`arm64` + `x86_64`) release binary.
 - `Sources/dok/DokApp.swift`: lifecycle, hotkey, mouse trigger, status item, settings window.
 - `Sources/dok/DokWheelView.swift`: wheel layout, glass layers, center music UI.
 - `Sources/dok/DokWheelWindow.swift`: window placement, hit testing, launch and dismiss behavior.
@@ -40,7 +40,7 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 - Do not rename the bundle identifier without an explicit migration plan.
 - Keep every product feature free; do not add feature gates, purchase flows, or account requirements.
 - `Arcly`, `Orbis`, and `PieMenu` may appear only in compatibility identifiers, legacy-data migration code, or documents explicitly marked as historical.
-- Preserve the native `NSGlassEffectView` sampling base; tune custom tone and edge layers separately.
+- Preserve the native `NSGlassEffectView` sampling base unchanged on macOS 26. On macOS 13–15, use the isolated `NSVisualEffectView` compatibility path; compatibility work must not alter the macOS 26 rendering branch.
 - Keep one persistent wheel window to avoid presentation flashing and desktop re-open failures.
 - Keep settings at `920 x 520` with only Wheel and General tabs unless the product scope changes.
 - Music metadata uses the private MediaRemote framework. Keep it in self-distributed builds only; an App Store target must compile it out rather than hide it at runtime.
@@ -49,14 +49,14 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 
 ## Current State (2026-08-20)
 
-- App version is 1.2.2; the local source and `/Applications/dok.app` include files, websites, recent-content preview, the native settings toolbar, and the full-bleed Icon Composer black-and-white ring brand icon.
+- App version is 1.3.0; one Universal 2 build supports macOS 13+, Apple Silicon, and Intel. macOS 26 retains the approved native Liquid Glass branch; macOS 13–15 use the isolated compatibility material.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
 - Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - Glass look is final: native `.clear` sampling with a `0.03` black tint base, no extra tone layer, native edge plus a single `0.55pt` white supplement. `menuOpacity` maps linearly to material intensity; 100% is the approved look.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
 - Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-content satellites (default 2) sit outside the wheel at 6 o'clock and include apps plus folders opened through dok, while files and websites stay fixed-slot only; Dock notification badges render on app slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
-- `dist/dok-1.2.2.dmg` is the current Developer ID-signed and Apple-notarized self-distribution package.
+- `dist/dok-1.3.0.dmg` is the current Developer ID-signed and Apple-notarized Universal 2 self-distribution package.
 
 ## Next Release
 

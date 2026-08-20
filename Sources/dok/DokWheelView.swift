@@ -60,20 +60,75 @@ enum DokGlassMaterial {
     }
 }
 
+final class CompatibilityGlassEffectView: NSView {
+    private let effectView = NSVisualEffectView()
+    private let tintView = NSView()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        clipsToBounds = true
+
+        effectView.blendingMode = .behindWindow
+        effectView.material = .popover
+        effectView.state = .active
+        effectView.wantsLayer = true
+        addSubview(effectView)
+
+        tintView.wantsLayer = true
+        addSubview(tintView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        effectView.frame = bounds
+        tintView.frame = bounds
+    }
+
+    func apply(cornerRadius: CGFloat, intensity: Double) {
+        let clampedIntensity = min(max(intensity, 0), 1)
+        let tintAlpha = DokGlassMaterial.tintBase + clampedIntensity * DokGlassMaterial.tintRange
+
+        layer?.cornerRadius = cornerRadius
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        effectView.layer?.cornerRadius = cornerRadius
+        effectView.layer?.cornerCurve = .continuous
+        effectView.layer?.masksToBounds = true
+        tintView.layer?.backgroundColor = NSColor.black.withAlphaComponent(tintAlpha).cgColor
+    }
+}
+
 struct NativeGlassSamplingLayer: NSViewRepresentable {
     let cornerRadius: CGFloat
     let intensity: Double
 
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let glass = NSGlassEffectView()
-        applyMaterial(to: glass)
+    func makeNSView(context: Context) -> NSView {
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            applyMaterial(to: glass)
+            return glass
+        }
+
+        let glass = CompatibilityGlassEffectView()
+        glass.apply(cornerRadius: cornerRadius, intensity: intensity)
         return glass
     }
 
-    func updateNSView(_ glass: NSGlassEffectView, context: Context) {
-        applyMaterial(to: glass)
+    func updateNSView(_ view: NSView, context: Context) {
+        if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView {
+            applyMaterial(to: glass)
+        } else if let glass = view as? CompatibilityGlassEffectView {
+            glass.apply(cornerRadius: cornerRadius, intensity: intensity)
+        }
     }
 
+    @available(macOS 26.0, *)
     private func applyMaterial(to glass: NSGlassEffectView) {
         let clampedIntensity = min(max(intensity, 0), 1)
         glass.style = .clear
@@ -88,6 +143,31 @@ struct NativeGlassSamplingLayer: NSViewRepresentable {
         glass.layer?.cornerRadius = cornerRadius
         glass.layer?.cornerCurve = .continuous
         glass.layer?.masksToBounds = true
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func dokCapsuleGlass() -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular, in: .capsule)
+        } else {
+            background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 0.55))
+        }
+    }
+
+    @ViewBuilder
+    func dokKeyCapGlass() -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular, in: .rect(cornerRadius: 5))
+        } else {
+            background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Color.white.opacity(0.22), lineWidth: 0.55)
+                )
+        }
     }
 }
 
@@ -638,7 +718,7 @@ struct DokWheelView: View {
                     .foregroundColor(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
-                    .glassEffect(.regular, in: .capsule)
+                    .dokCapsuleGlass()
                     .transition(MenuMotion.centerContentTransition)
             }
         }

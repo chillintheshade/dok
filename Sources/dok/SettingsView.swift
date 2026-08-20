@@ -719,9 +719,15 @@ struct AppPickerView: View {
                 Text(Loc.string("appPicker.title"))
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Button(Loc.string("appPicker.done")) { isPresented = false }
-                    .buttonStyle(.glass)
-                    .keyboardShortcut(.defaultAction)
+                if #available(macOS 26.0, *) {
+                    Button(Loc.string("appPicker.done")) { isPresented = false }
+                        .buttonStyle(.glass)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button(Loc.string("appPicker.done")) { isPresented = false }
+                        .buttonStyle(.bordered)
+                        .keyboardShortcut(.defaultAction)
+                }
             }
 
             SearchField(text: $searchText, placeholder: Loc.string("appPicker.search"))
@@ -1270,7 +1276,7 @@ struct KeyCap: View {
             .font(.system(size: 12, weight: .medium, design: .rounded))
             .frame(minWidth: 24, minHeight: 22)
             .padding(.horizontal, 4)
-            .glassEffect(.regular, in: .rect(cornerRadius: 5))
+            .dokKeyCapGlass()
     }
 }
 
