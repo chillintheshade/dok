@@ -28,17 +28,15 @@ dok currently requires macOS 26.0 or later.
 
 dok 当前需要 macOS 26.0 或更高版本。
 
-## Latest Update: 1.2.0 / 最新更新：1.2.0
+## Latest Update: 1.2.1 / 最新更新：1.2.1
 
-- Add apps, files, folders, and websites to the wheel / 轮盘支持应用、文件、文件夹和网址
-- Recent Content satellites now support apps and folders, with 1–4 items / 最近内容卫星支持应用和文件夹，可显示 1–4 个
-- Wheel Settings previews Recent Content satellites immediately / 设置页轮盘可实时预览最近内容
-- Native macOS preference toolbar and safer restore-defaults flow / 原生 macOS 设置工具栏，恢复默认增加确认
-- Smoother summon and dismiss animations / 优化轮盘呼出与收起动画，减少闪烁
+- New black-and-white brand icon matching the menu bar symbol / 全新黑白品牌图标，与菜单栏符号统一
+- Default shortcut is now Command-Escape, close to the left Command key without taking over Command-Grave / 默认快捷键改为 Command-Escape，靠近左 Command 且不再占用 Command-Grave
+- Signed with Developer ID and notarized by Apple for normal installation / 使用 Developer ID 签名并通过 Apple 公证，可直接正常安装
 
-[View the full release notes and download dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)
+[View the full release notes and download dok 1.2.1](https://github.com/chillintheshade/dok/releases/tag/v1.2.1)
 
-[查看完整更新说明并下载 dok 1.2.0](https://github.com/chillintheshade/dok/releases/tag/v1.2.0)
+[查看完整更新说明并下载 dok 1.2.1](https://github.com/chillintheshade/dok/releases/tag/v1.2.1)
 
 ## Preview / 预览
 
@@ -79,17 +77,9 @@ Download the latest DMG from [GitHub Releases](https://github.com/chillintheshad
 
 从 [GitHub Releases](https://github.com/chillintheshade/dok/releases/latest) 下载最新 DMG，然后把 `dok.app` 拖到 `/Applications`。
 
-This self-distributed build is ad-hoc signed, but not notarized by Apple yet. If macOS says dok cannot be verified or is damaged, install it to `/Applications` first, then run:
+The release is signed with a Developer ID certificate and notarized by Apple. macOS can verify it normally; no Terminal command is required.
 
-当前自分发版本采用临时签名，但还没有经过 Apple notarization。如果 macOS 提示无法验证或 App 已损坏，先拖到 `/Applications`，再运行：
-
-```bash
-sudo xattr -dr com.apple.quarantine /Applications/dok.app
-```
-
-After that, open dok again.
-
-然后重新打开 dok。
+发布版本已使用 Developer ID 证书签名并通过 Apple 公证，macOS 可以正常验证，无需执行终端命令。
 
 ## Build From Source / 从源码构建
 

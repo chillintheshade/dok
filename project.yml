@@ -10,8 +10,8 @@ settings:
     SWIFT_VERSION: "5"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     PRODUCT_NAME: dok
-    MARKETING_VERSION: "1.2.0"
-    CURRENT_PROJECT_VERSION: "5"
+    MARKETING_VERSION: "1.2.1"
+    CURRENT_PROJECT_VERSION: "6"
 
 targets:
   # BSD-3 vendored framework (Vendor/MediaRemoteAdapter).
