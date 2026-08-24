@@ -56,7 +56,8 @@ def main() -> None:
     assert 'Loc.string("settings.notificationBadges")' in SETTINGS
     assert '"settings.notificationBadges" = "Notification Badges";' in EN
     assert '"settings.notificationBadges" = "通知角标";' in ZH
-    assert ".frame(width: 920, height: 520)" in SETTINGS
+    assert "static let windowWidth: CGFloat = 920" in SETTINGS
+    assert "static let windowHeight: CGFloat = 520" in SETTINGS
 
     print("Notification badge contract passed.")
 

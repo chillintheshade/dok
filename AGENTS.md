@@ -43,6 +43,7 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 - Preserve the native `NSGlassEffectView` sampling base unchanged on macOS 26. On macOS 13–15, use the isolated `NSVisualEffectView` compatibility path; compatibility work must not alter the macOS 26 rendering branch.
 - Keep one persistent wheel window to avoid presentation flashing and desktop re-open failures.
 - Keep settings at `920 x 520` with only Wheel and General tabs unless the product scope changes.
+- Settings use a fixed `216pt` in-window sidebar and one continuous root surface. Keep navigation rows at `34pt`, setting rows at `44pt`, trailing controls at `130pt`, dividers at `0.5pt`, and all selection/action states monochrome through semantic primary/secondary fills. Do not restore the old preference toolbar, nested white cards, colored accents, decorative shadows, or springy settings animations.
 - Music metadata uses the private MediaRemote framework. Keep it in self-distributed builds only; an App Store target must compile it out rather than hide it at runtime.
 - Build, run all contract tests, install, sign, and visually inspect both settings tabs after UI changes.
 - Do not commit or push unless the user explicitly asks.

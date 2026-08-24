@@ -4,35 +4,76 @@ import ApplicationServices
 import ServiceManagement
 
 private enum SettingsDesign {
-    static let contentWidth: CGFloat = 700
-    static let groupRadius: CGFloat = 11
-    static let groupStrokeOpacity: Double = 0.08
-    static let groupFillOpacity: Double = 0.9
-    static let rowHeight: CGFloat = 46
-    static let contentGap: CGFloat = 14
-}
-
-private struct SettingsGroupSurface: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .background(
-                Color(nsColor: .controlBackgroundColor).opacity(SettingsDesign.groupFillOpacity),
-                in: RoundedRectangle(cornerRadius: SettingsDesign.groupRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: SettingsDesign.groupRadius, style: .continuous)
-                    .strokeBorder(
-                        Color.primary.opacity(SettingsDesign.groupStrokeOpacity),
-                        lineWidth: 1
-                    )
-            }
-    }
+    static let windowWidth: CGFloat = 920
+    static let windowHeight: CGFloat = 520
+    static let sidebarWidth: CGFloat = 216
+    static let navigationRowHeight: CGFloat = 34
+    static let rowHeight: CGFloat = 44
+    static let controlWidth: CGFloat = 130
+    static let actionPaneWidth: CGFloat = 196
+    static let generalContentWidth: CGFloat = 656
+    static let dividerWidth: CGFloat = 0.5
+    static let navigationRadius: CGFloat = 7
+    static let surfaceRadius: CGFloat = 8
+    static let contentInset: CGFloat = 24
+    static let sectionSpacing: CGFloat = 16
+    static let insetSurface = Color.primary.opacity(0.045)
+    static let emphasizedSurface = Color.primary.opacity(0.065)
+    static let hoverSurface = Color.primary.opacity(0.035)
+    static let selectedSurface = Color.primary.opacity(0.055)
+    static let hairline = Color(nsColor: .separatorColor).opacity(0.72)
+    static let quietDivider = Color(nsColor: .separatorColor).opacity(0.44)
+    static let quickMotion = Animation.easeOut(duration: 0.14)
+    static let standardMotion = Animation.easeInOut(duration: 0.16)
 }
 
 private extension View {
-    func settingsGroupSurface() -> some View {
-        modifier(SettingsGroupSurface())
+    func settingsInsetSurface(emphasized: Bool = false) -> some View {
+        background(
+            emphasized ? SettingsDesign.emphasizedSurface : SettingsDesign.insetSurface,
+            in: RoundedRectangle(cornerRadius: SettingsDesign.surfaceRadius, style: .continuous)
+        )
     }
+}
+
+private struct SettingsRootGlassLayer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.style = .regular
+            glass.cornerRadius = 18
+            glass.alphaValue = 1
+            glass.clipsToBounds = true
+            glass.layer?.cornerCurve = .continuous
+            return glass
+        }
+
+        let effect = NSVisualEffectView()
+        effect.blendingMode = .behindWindow
+        effect.material = .sidebar
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 18
+        effect.layer?.cornerCurve = .continuous
+        effect.layer?.masksToBounds = true
+        return effect
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
+private final class SettingsWindowDragHandleView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+}
+
+private struct SettingsWindowDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        SettingsWindowDragHandleView()
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {}
 }
 
 enum SettingsTab: String, CaseIterable, Identifiable {
@@ -58,13 +99,87 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
-    let selectedTab: SettingsTab
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var selectedTab: SettingsTab
+    let onSelectTab: (SettingsTab) -> Void
+
+    init(selectedTab: SettingsTab, onSelectTab: @escaping (SettingsTab) -> Void = { _ in }) {
+        _selectedTab = State(initialValue: selectedTab)
+        self.onSelectTab = onSelectTab
+    }
 
     var body: some View {
-        settingsContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor))
-        .frame(width: 920, height: 520)
+        ZStack {
+            SettingsRootGlassLayer()
+                .allowsHitTesting(false)
+
+            HStack(spacing: 0) {
+                settingsSidebar
+                Rectangle()
+                    .fill(SettingsDesign.hairline)
+                    .frame(width: SettingsDesign.dividerWidth)
+                    .accessibilityHidden(true)
+                settingsContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // A narrow, explicit window-drag strip. It occupies only the empty
+            // header band and cannot compete with wheel item reordering below.
+            SettingsWindowDragHandle()
+                .frame(height: 22)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .accessibilityHidden(true)
+        }
+        .tint(.primary)
+        .frame(width: SettingsDesign.windowWidth, height: SettingsDesign.windowHeight)
+    }
+
+    private var settingsSidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsTab.allCases) { tab in
+                Button {
+                    guard selectedTab != tab else { return }
+                    NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
+                    if reduceMotion {
+                        selectedTab = tab
+                    } else {
+                        withAnimation(SettingsDesign.standardMotion) {
+                            selectedTab = tab
+                        }
+                    }
+                    onSelectTab(tab)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: tab.symbol)
+                            .font(.system(size: 14, weight: .regular))
+                            .frame(width: 20)
+                        Text(tab.title)
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: SettingsDesign.navigationRowHeight)
+                    .contentShape(Rectangle())
+                    .background {
+                        if selectedTab == tab {
+                            RoundedRectangle(
+                                cornerRadius: SettingsDesign.navigationRadius,
+                                style: .continuous
+                            )
+                            .fill(SettingsDesign.selectedSurface)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .frame(width: SettingsDesign.sidebarWidth)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -84,6 +199,7 @@ struct SettingsView: View {
 
 struct AppsSettingsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingAppPicker = false
     @State private var selectedIndex: Int? = nil
     @State private var draggingIndex: Int? = nil
@@ -91,7 +207,7 @@ struct AppsSettingsView: View {
     @State private var dragTargetIndex: Int? = nil
     @State private var isInDeleteZone: Bool = false
 
-    private let pieSize: CGFloat = 476
+    private let pieSize: CGFloat = 452
     private var previewMenuRadius: CGFloat { appState.settings.menuRadius }
     private var previewOuterDiameter: CGFloat { (previewMenuRadius + 50) * 2 }
     private var baseScale: CGFloat {
@@ -127,7 +243,7 @@ struct AppsSettingsView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 8) {
             appsPreviewPane
             appsControlPane
         }
@@ -166,7 +282,7 @@ struct AppsSettingsView: View {
                 bookmarkData: bookmarkData,
                 customIconData: AppItem.persistentCustomIconData(for: url)
             )
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
                 appState.settings.apps.append(item)
             }
             IconCache.shared.invalidate()
@@ -204,7 +320,7 @@ struct AppsSettingsView: View {
             path: url.absoluteString,
             itemType: .webLink
         )
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
             appState.settings.apps.append(item)
         }
         IconCache.shared.invalidate()
@@ -220,7 +336,7 @@ struct AppsSettingsView: View {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
             selectedIndex = nil
             appState.settings.apps = Array(AppState.defaultApps().prefix(maxSlots))
         }
@@ -228,18 +344,11 @@ struct AppsSettingsView: View {
 
     private var appsPreviewPane: some View {
         wheelStage
-            .frame(width: 500, height: 500, alignment: .center)
+            .frame(width: 475, height: 500, alignment: .center)
     }
 
     private var wheelStage: some View {
         ZStack {
-            Circle()
-                .fill(.white.opacity(0.16))
-                .frame(width: pieSize, height: pieSize)
-                .scaleEffect((pieSize + 34) / pieSize)
-                .blur(radius: 26)
-                .allowsHitTesting(false)
-
             pieRing
             pieIcons
             recentPreviewSatellites
@@ -249,22 +358,22 @@ struct AppsSettingsView: View {
         .animation(.easeInOut(duration: 0.2), value: appState.settings.showRecentApps)
         .animation(.easeInOut(duration: 0.2), value: appState.settings.recentAppCount)
         .onTapGesture {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.65)) {
+            withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
                 selectedIndex = nil
             }
         }
     }
 
     private var appsControlPane: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             controlList
             recentAppsControl
         }
-        .frame(width: 208)
+        .frame(width: SettingsDesign.actionPaneWidth)
     }
 
     private var recentAppsControl: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(Loc.string("settings.recentApps"))
                     .font(.system(size: 13, weight: .semibold))
@@ -284,8 +393,8 @@ struct AppsSettingsView: View {
             .pickerStyle(.segmented)
             .disabled(!appState.settings.showRecentApps)
         }
-        .padding(14)
-        .settingsGroupSurface()
+        .padding(12)
+        .settingsInsetSurface()
     }
 
     private var controlList: some View {
@@ -299,8 +408,7 @@ struct AppsSettingsView: View {
             }
             .disabled(appState.settings.apps.count >= maxSlots)
 
-            Divider()
-                .padding(.leading, 44)
+            quietActionDivider
 
             actionTile(
                 Loc.string("settings.addFolder"),
@@ -310,8 +418,7 @@ struct AppsSettingsView: View {
                 addFileSystemItem(chooseFolder: true)
             }
 
-            Divider()
-                .padding(.leading, 44)
+            quietActionDivider
 
             actionTile(
                 Loc.string("settings.addFile"),
@@ -321,8 +428,7 @@ struct AppsSettingsView: View {
                 addFileSystemItem(chooseFolder: false)
             }
 
-            Divider()
-                .padding(.leading, 44)
+            quietActionDivider
 
             actionTile(
                 Loc.string("settings.addLink"),
@@ -332,8 +438,7 @@ struct AppsSettingsView: View {
                 addWebLink()
             }
 
-            Divider()
-                .padding(.leading, 44)
+            quietActionDivider
 
             actionTile(
                 Loc.string("settings.restoreDefaults"),
@@ -344,7 +449,14 @@ struct AppsSettingsView: View {
                 restoreDefaultsWithConfirmation()
             }
         }
-        .settingsGroupSurface()
+        .settingsInsetSurface()
+    }
+
+    private var quietActionDivider: some View {
+        Rectangle()
+            .fill(SettingsDesign.quietDivider)
+            .frame(height: SettingsDesign.dividerWidth)
+            .padding(.leading, 42)
     }
 
     private func actionTile(
@@ -357,18 +469,18 @@ struct AppsSettingsView: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .regular))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(isDestructive ? Color.red : Color.accentColor)
-                    .frame(width: 28, height: 28)
+                    .foregroundStyle(.primary)
+                    .frame(width: 30, height: 30)
                     .background(
-                        (isDestructive ? Color.red : Color.accentColor).opacity(0.09),
+                        isDestructive ? SettingsDesign.emphasizedSurface : SettingsDesign.insetSurface,
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                     )
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                     Text(subtitle)
                         .font(.system(size: 10.5, weight: .regular))
                         .foregroundStyle(.tertiary)
@@ -379,8 +491,8 @@ struct AppsSettingsView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 56)
+            .padding(.horizontal, 8)
+            .frame(height: SettingsDesign.rowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -421,7 +533,7 @@ struct AppsSettingsView: View {
                     Text(Loc.string("wheel.releaseToDelete"))
                         .font(.system(size: 10, weight: .medium))
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(.primary)
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
             // 2. 拖拽中（未进入删除区）
@@ -461,9 +573,9 @@ struct AppsSettingsView: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: selectedIndex)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isInDeleteZone)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: draggingIndex)
+        .animation(SettingsDesign.standardMotion, value: selectedIndex)
+        .animation(SettingsDesign.standardMotion, value: isInDeleteZone)
+        .animation(SettingsDesign.standardMotion, value: draggingIndex)
     }
 
     // MARK: - 图标
@@ -574,7 +686,7 @@ struct AppsSettingsView: View {
             // 选中高亮圆 — 柔和的 tint 底色
             if isSelected && !isDragging {
                 Circle()
-                    .fill(.tint.opacity(0.1))
+                    .fill(SettingsDesign.selectedSurface)
                     .frame(width: iconSize + 12, height: iconSize + 12)
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
@@ -586,7 +698,7 @@ struct AppsSettingsView: View {
                 .overlay {
                     if isDragging && isInDeleteZone {
                         Circle()
-                            .fill(.red.opacity(0.45))
+                            .fill(.primary.opacity(0.32))
                             .overlay {
                                 Image(systemName: "trash.fill")
                                     .font(.system(size: iconSize * 0.35, weight: .bold))
@@ -605,7 +717,7 @@ struct AppsSettingsView: View {
         .zIndex(isDragging ? 10 : (isSelected ? 5 : 0))
         .gesture(dragGesture(index: index, total: total, originX: originalPos.x, originY: originalPos.y))
         .onTapGesture {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.55)) {
+            withAnimation(SettingsDesign.standardMotion) {
                 selectedIndex = selectedIndex == index ? nil : index
             }
         }
@@ -617,7 +729,7 @@ struct AppsSettingsView: View {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
                 if draggingIndex == nil {
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                    withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
                         selectedIndex = nil
                         draggingIndex = index
                     }
@@ -632,7 +744,7 @@ struct AppsSettingsView: View {
                 let inDelete = distFromCenter < innerRadius
 
                 if inDelete != isInDeleteZone {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                    withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
                         isInDeleteZone = inDelete
                     }
                 }
@@ -640,14 +752,16 @@ struct AppsSettingsView: View {
                 if inDelete {
                     // 进入删除区时取消排序预览
                     if dragTargetIndex != nil {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
                             dragTargetIndex = nil
                         }
                     }
                 } else {
                     let target = slotIndex(at: CGPoint(x: absX, y: absY), total: total)
                     if target != dragTargetIndex {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        withAnimation(
+                            reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.52)
+                        ) {
                             dragTargetIndex = target
                         }
                     }
@@ -660,7 +774,9 @@ struct AppsSettingsView: View {
                 let inDelete = distFromCenter < innerRadius
                 let target = slotIndex(at: CGPoint(x: absX, y: absY), total: total)
 
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                withAnimation(
+                    reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.52)
+                ) {
                     if inDelete {
                         // 拖到中心 → 删除
                         appState.settings.apps.remove(at: index)
@@ -714,20 +830,18 @@ struct AppPickerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             HStack {
                 Text(Loc.string("appPicker.title"))
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                if #available(macOS 26.0, *) {
-                    Button(Loc.string("appPicker.done")) { isPresented = false }
-                        .buttonStyle(.glass)
-                        .keyboardShortcut(.defaultAction)
-                } else {
-                    Button(Loc.string("appPicker.done")) { isPresented = false }
-                        .buttonStyle(.bordered)
-                        .keyboardShortcut(.defaultAction)
-                }
+                Button(Loc.string("appPicker.done")) { isPresented = false }
+                    .font(.system(size: 13, weight: .medium))
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .settingsInsetSurface(emphasized: true)
+                    .keyboardShortcut(.defaultAction)
             }
 
             SearchField(text: $searchText, placeholder: Loc.string("appPicker.search"))
@@ -737,7 +851,7 @@ struct AppPickerView: View {
                 HStack(spacing: 12) {
                     Image(nsImage: app.icon)
                         .resizable()
-                        .frame(width: 28, height: 28)
+                        .frame(width: 30, height: 30)
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(app.displayName)
@@ -754,24 +868,24 @@ struct AppPickerView: View {
                     if justAdded {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 16))
-                            .foregroundColor(.green)
-                            .transition(.scale.combined(with: .opacity))
+                            .foregroundStyle(.primary)
+                            .transition(.opacity)
                     } else {
                         Button(action: { addApp(app) }) {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 16))
                                 .symbolRenderingMode(.hierarchical)
-                                .foregroundColor(.green)
+                                .foregroundStyle(.primary)
                         }
                         .buttonStyle(.plain)
                         .disabled(appState.settings.apps.count >= AppState.maxSlots)
                     }
                 }
-                .padding(.vertical, 2)
+                .frame(height: SettingsDesign.rowHeight)
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
+            .listStyle(.plain)
         }
-        .padding(20)
+        .padding(16)
         .frame(width: 420, height: 500)
         .onAppear {
             installedApps = AppState.installedApps()
@@ -780,7 +894,7 @@ struct AppPickerView: View {
 
     func addApp(_ app: AppItem) {
         guard appState.settings.apps.count < AppState.maxSlots else { return }
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+        withAnimation(SettingsDesign.standardMotion) {
             appState.settings.apps.append(app)
             recentlyAdded.insert(app.bundleIdentifier)
         }
@@ -801,17 +915,17 @@ private struct SettingsGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 11)
-                .padding(.bottom, 7)
+                .padding(.leading, 4)
 
-            content
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .settingsInsetSurface()
         }
-        .settingsGroupSurface()
     }
 }
 
@@ -830,7 +944,7 @@ private struct AccessibilityPermissionRow: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.secondary)
 
                     Text(Loc.string("permission.accessibility.needed"))
                         .font(.system(size: 11))
@@ -845,8 +959,8 @@ private struct AccessibilityPermissionRow: View {
                     }
                     .controlSize(.small)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .frame(minHeight: SettingsDesign.rowHeight)
                 .transition(.opacity)
             }
         }
@@ -880,16 +994,19 @@ private struct SettingRow<Accessory: View>: View {
             Spacer(minLength: 8)
             accessory
                 .controlSize(.small)
+                .frame(width: SettingsDesign.controlWidth, alignment: .trailing)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .frame(height: SettingsDesign.rowHeight)
     }
 }
 
 private struct SettingDivider: View {
     var body: some View {
-        Divider()
-            .padding(.leading, 14)
+        Rectangle()
+            .fill(SettingsDesign.quietDivider)
+            .frame(height: SettingsDesign.dividerWidth)
+            .padding(.leading, 12)
     }
 }
 
@@ -898,24 +1015,23 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: SettingsDesign.contentGap) {
-            VStack(spacing: SettingsDesign.contentGap) {
+        HStack(alignment: .top, spacing: SettingsDesign.sectionSpacing) {
+            VStack(spacing: SettingsDesign.sectionSpacing) {
                 triggerGroup
                 playbackGroup
                 feedbackGroup
             }
             .frame(maxWidth: .infinity)
 
-            VStack(spacing: SettingsDesign.contentGap) {
+            VStack(spacing: SettingsDesign.sectionSpacing) {
                 wheelGroup
                 systemGroup
             }
             .frame(maxWidth: .infinity)
         }
-        .frame(width: SettingsDesign.contentWidth)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(width: SettingsDesign.generalContentWidth)
+        .padding(SettingsDesign.contentInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             launchAtLogin = getLaunchAtLogin()
         }
@@ -935,7 +1051,6 @@ struct GeneralSettingsView: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 142)
                 .onChange(of: appState.settings.mouseTrigger) { _ in
                     NotificationCenter.default.post(name: .mouseTriggerChanged, object: nil)
                 }
@@ -956,7 +1071,6 @@ struct GeneralSettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 142)
             }
         }
     }
@@ -988,7 +1102,6 @@ struct GeneralSettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 154)
             }
 
             SettingDivider()
@@ -1001,7 +1114,6 @@ struct GeneralSettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 154)
                 .onChange(of: appState.settings.appearanceMode) { _ in
                     NotificationCenter.default.post(name: .appearanceChanged, object: nil)
                 }
@@ -1009,30 +1121,31 @@ struct GeneralSettingsView: View {
 
             SettingDivider()
 
-            HStack(alignment: .top, spacing: 0) {
-                compactSlider(
-                    title: Loc.string("settings.radius"),
-                    value: $appState.settings.menuRadius,
-                    range: 100...180,
-                    step: 10
-                )
-                Divider().frame(height: 48)
-                compactSlider(
-                    title: Loc.string("settings.icon"),
-                    value: $appState.settings.iconSize,
-                    range: 32...64,
-                    step: 4
-                )
-                Divider().frame(height: 48)
-                compactSlider(
-                    title: Loc.string("settings.opacity"),
-                    value: $appState.settings.menuOpacity,
-                    range: 0.15...1.0,
-                    step: 0.05,
-                    percentage: true
-                )
-            }
-            .frame(height: 72)
+            compactSlider(
+                title: Loc.string("settings.radius"),
+                value: $appState.settings.menuRadius,
+                range: 100...180,
+                step: 10
+            )
+
+            SettingDivider()
+
+            compactSlider(
+                title: Loc.string("settings.icon"),
+                value: $appState.settings.iconSize,
+                range: 32...64,
+                step: 4
+            )
+
+            SettingDivider()
+
+            compactSlider(
+                title: Loc.string("settings.opacity"),
+                value: $appState.settings.menuOpacity,
+                range: 0.15...1.0,
+                step: 0.05,
+                percentage: true
+            )
         }
     }
 
@@ -1066,22 +1179,6 @@ struct GeneralSettingsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func inlineSetting<Accessory: View>(
-        title: String,
-        @ViewBuilder accessory: () -> Accessory
-    ) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-
-            Spacer(minLength: 8)
-            accessory()
-                .controlSize(.small)
-        }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity)
-    }
-
     private func toggleCell(
         title: String,
         isOn: Binding<Bool>
@@ -1094,8 +1191,9 @@ struct GeneralSettingsView: View {
             Toggle("", isOn: isOn)
                 .labelsHidden()
                 .controlSize(.small)
+                .frame(width: SettingsDesign.controlWidth, alignment: .trailing)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .frame(height: SettingsDesign.rowHeight)
         .frame(maxWidth: .infinity)
     }
@@ -1107,20 +1205,17 @@ struct GeneralSettingsView: View {
         step: Double,
         percentage: Bool = false
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                Spacer()
-                Text(percentage ? "\(Int(round(value.wrappedValue * 100)))%" : "\(Int(value.wrappedValue))")
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+        SettingRow(title: title) {
+            VStack(spacing: 2) {
+                HStack {
+                    Spacer(minLength: 0)
+                    Text(percentage ? "\(Int(round(value.wrappedValue * 100)))%" : "\(Int(value.wrappedValue))")
+                        .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: value, in: range, step: step)
             }
-
-            Slider(value: value, in: range, step: step)
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity)
     }
 
     func getLaunchAtLogin() -> Bool {
@@ -1150,6 +1245,7 @@ struct GeneralSettingsView: View {
 
 struct HotkeyRecorderRow: View {
     @ObservedObject var appState: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isRecording = false
     @State private var localMonitor: Any?
     @State private var globalMonitor: Any?
@@ -1157,7 +1253,7 @@ struct HotkeyRecorderRow: View {
     var body: some View {
         Button {
             guard !isRecording else { return }
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            withAnimation(reduceMotion ? nil : SettingsDesign.quickMotion) {
                 startRecording()
             }
         } label: {
@@ -1170,13 +1266,13 @@ struct HotkeyRecorderRow: View {
                 if isRecording {
                     Text(Loc.string("hotkey.recording"))
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.accentColor)
+                        .foregroundStyle(.secondary)
                         .transition(.opacity)
                 } else {
                     HStack(spacing: 8) {
                         Text(Loc.string("settings.changeHotkey"))
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(.primary)
 
                         HStack(spacing: 2) {
                             ForEach(modifierSymbols, id: \.self) { sym in
@@ -1194,7 +1290,7 @@ struct HotkeyRecorderRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isRecording ? Loc.string("hotkey.recording") : Loc.string("settings.changeHotkey"))
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
+        .animation(reduceMotion ? nil : SettingsDesign.standardMotion, value: isRecording)
         .onReceive(NotificationCenter.default.publisher(for: .hotkeyRecordingCancelled)) { _ in
             stopRecording()
         }
@@ -1234,7 +1330,7 @@ struct HotkeyRecorderRow: View {
             .intersection([.command, .control, .option, .shift])
 
         if event.keyCode == 53 && mods.isEmpty {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            withAnimation(reduceMotion ? nil : SettingsDesign.quickMotion) {
                 stopRecording()
             }
             return
@@ -1247,7 +1343,7 @@ struct HotkeyRecorderRow: View {
         appState.settings.hotkey = HotkeyConfig(keyCode: event.keyCode, modifiers: mods)
         NotificationCenter.default.post(name: .hotkeyChanged, object: nil)
 
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+        withAnimation(reduceMotion ? nil : SettingsDesign.quickMotion) {
             stopRecording()
         }
     }

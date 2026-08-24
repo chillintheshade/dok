@@ -38,7 +38,8 @@ def main() -> None:
         require(WHEEL, needle, reason)
 
     require(SETTINGS, "if #available(macOS 26.0, *)", "availability-safe settings controls")
-    require(SETTINGS, ".buttonStyle(.bordered)", "macOS 15 button fallback")
+    require(SETTINGS, "NSVisualEffectView", "macOS 13-15 settings root material")
+    require(SETTINGS, ".buttonStyle(.plain)", "availability-safe monochrome settings buttons")
     require(SETTINGS, ".dokKeyCapGlass()", "macOS 15 key-cap fallback")
 
     print("dok platform compatibility contract passed.")

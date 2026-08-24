@@ -481,7 +481,7 @@ struct DokWheelView: View {
                 innerRadius: centerLensRadius + 3,
                 outerRadius: outerRadius - 3
             )
-            .fill(Color.accentColor.opacity(0.12))
+            .fill(Color.primary.opacity(0.055))
             .frame(width: outerRadius * 2, height: outerRadius * 2)
             .allowsHitTesting(false)
             .transition(.opacity)

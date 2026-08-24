@@ -9,10 +9,14 @@ DOK_APP = (ROOT / "Sources/dok/DokApp.swift").read_text()
 
 assert "hotkeyRecordingCancelled" in APP_STATE
 
-toolbar_post = "NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)"
-selection = "selectedSettingsTab = tab"
-assert toolbar_post in DOK_APP, "toolbar pane changes must cancel hotkey recording"
-assert DOK_APP.index(toolbar_post) < DOK_APP.index(selection), "cancel recording before changing panes"
+cancel_post = "NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)"
+sidebar_start = SETTINGS.index("private var settingsSidebar")
+sidebar_end = SETTINGS.index("private var settingsContent", sidebar_start)
+sidebar = SETTINGS[sidebar_start:sidebar_end]
+assert cancel_post in sidebar, "sidebar pane changes must cancel hotkey recording"
+assert sidebar.index(cancel_post) < sidebar.index("selectedTab = tab"), (
+    "cancel recording before changing panes"
+)
 
 assert ".onReceive(NotificationCenter.default.publisher(for: .hotkeyRecordingCancelled))" in SETTINGS
 assert ".onDisappear" in SETTINGS
