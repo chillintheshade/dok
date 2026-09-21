@@ -1,10 +1,10 @@
 # 更新记录 / Changelog
 
-## 开发分支更新 / Development update — 2026-09-21
+## 1.4.0 — 待公证 / Pending notarization
 
-本节记录源码更新；现有已签名、公证的下载版本仍为 1.3.0。
+1.4.0 安装包已生成并通过 Developer ID 签名校验，正在等待 Apple 公证。公开稳定版仍为 1.3.0。
 
-This entry covers source updates. The signed and notarized download remains version 1.3.0.
+The 1.4.0 installer is Developer ID-signed and awaiting Apple notarization. The public stable release remains 1.3.0.
 
 ### 新增
 
