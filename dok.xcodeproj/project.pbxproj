@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BE312C42A1264226AA055389 /* KeyActionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C19DCB4C820F43CA80552573 /* KeyActionService.swift */; };
+		A21DB7DAF233407FB0567981 /* WebsiteIconLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2FE6F8E3AAE47D6A803C819 /* WebsiteIconLoader.swift */; };
 		135F9392D2331B93BCA36155 /* MediaRemote.m in Sources */ = {isa = PBXBuildFile; fileRef = E20C41F50BC7C1A4E3197AAF /* MediaRemote.m */; };
 		17BA75C870AE2A91FE52A471 /* NowPlayingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7764F3BD47EEBD88F2C546 /* NowPlayingService.swift */; };
 		246C75FE22367A9AECA2D703 /* globals.h in Headers */ = {isa = PBXBuildFile; fileRef = A304093AF678D129A3BC0C78 /* globals.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -74,6 +76,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C19DCB4C820F43CA80552573 /* KeyActionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyActionService.swift; sourceTree = "<group>"; };
+		F2FE6F8E3AAE47D6A803C819 /* WebsiteIconLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteIconLoader.swift; sourceTree = "<group>"; };
 		003301A85A16A3D4B09DB40A /* MediaRemote.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MediaRemote.h; sourceTree = "<group>"; };
 		02D8229C0C95BB4EBCF27E0B /* DokWheelWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DokWheelWindow.swift; sourceTree = "<group>"; };
 		0428ECBFDE4A83753BE736EA /* speed.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = speed.m; sourceTree = "<group>"; };
@@ -252,6 +256,8 @@
 		BE87910AD0394DB0A50C44F0 /* dok */ = {
 			isa = PBXGroup;
 			children = (
+				F2FE6F8E3AAE47D6A803C819 /* WebsiteIconLoader.swift */,
+				C19DCB4C820F43CA80552573 /* KeyActionService.swift */,
 				B488B75027B1739850580F97 /* AppState.swift */,
 				91B657B2F0EAE8B86CDA505C /* DockNotificationBadgeReader.swift */,
 				CDABB942932E834D57A6DAAE /* DokApp.swift */,
@@ -400,6 +406,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A21DB7DAF233407FB0567981 /* WebsiteIconLoader.swift in Sources */,
+				BE312C42A1264226AA055389 /* KeyActionService.swift in Sources */,
 				FE97BDD2A3EA19D167FDCECB /* AppState.swift in Sources */,
 				D740E2344FB1C2BFC4FC51A4 /* DockNotificationBadgeReader.swift in Sources */,
 				B76FDDE3DD2A93BCD88EF893 /* DokApp.swift in Sources */,

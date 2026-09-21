@@ -31,6 +31,13 @@
 "link.placeholder" = "example.com";
 "link.add" = "Add";
 "link.cancel" = "Cancel";
+"link.address" = "Website";
+"link.name" = "Name";
+"link.name.placeholder" = "Optional, for example Project board";
+"link.edit.title" = "Edit website";
+"link.save" = "Save";
+"wheel.undoRemoval" = "Undo";
+"wheel.undoFull" = "Remove a slot to restore this item";
 "link.invalid.title" = "Invalid Website Address";
 "link.invalid.message" = "Enter a valid http or https address.";
 
@@ -45,7 +52,7 @@
 "settings.restoreDefaults" = "Restore Defaults";
 "settings.restoreDefaults.subtitle" = "Bring back common system items";
 "settings.restoreDefaults.confirm.title" = "Restore the Default Wheel?";
-"settings.restoreDefaults.confirm.message" = "The apps, files, folders, and websites currently on the wheel will be replaced with common system items. This cannot be undone.";
+"settings.restoreDefaults.confirm.message" = "The apps, files, folders, websites, and keyboard actions currently on the wheel will be replaced with common system items. This cannot be undone.";
 "settings.restoreDefaults.confirm.action" = "Restore Defaults";
 "settings.restoreDefaults.confirm.cancel" = "Cancel";
 "settings.recentApps" = "Recent Content";
@@ -101,3 +108,28 @@
 "hotkey.recording" = "Press a new shortcut...";
 
 "music.placeholder" = "Music";
+
+"settings.addKeyAction" = "Add keyboard action";
+"settings.addKeyAction.subtitle" = "Trigger a key combination";
+"keyAction.title" = "Set up keyboard action";
+"keyAction.name" = "Name, e.g. WeChat screenshot";
+"keyAction.combination" = "Key combination";
+"keyAction.record" = "Record combination";
+"keyAction.hint" = "Click to record, then press a combination containing ⌘, ⌃ or ⌥. Press Esc to cancel.";
+"keyAction.conflict" = "Choose a combination different from the dok activation shortcut.";
+"keyAction.target" = "Switch to";
+"keyAction.currentApp" = "No app switch (click to choose)";
+"keyAction.clearTarget" = "Clear";
+"keyAction.targetHint" = "Without a target, keep the current app and send the shortcut directly. Global shortcuts such as WeChat screenshots need no app switch; WeChat must be running.";
+"keyAction.permission" = "Enable Accessibility access for dok to record and execute combinations.";
+"keyAction.openAccessibility" = "Open Accessibility settings";
+"keyAction.error" = "Keyboard action could not run";
+"keyAction.targetError" = "Could not focus the target app. Open it and try again.";
+"keyAction.wheelError" = "The wheel is still open. Close it and try again.";
+"keyAction.releaseError" = "Release the keyboard keys and mouse buttons, then try again.";
+"keyAction.unconfigured" = "Select this slot in Wheel settings and choose a key combination first.";
+"keyAction.recording" = "Press a combination…";
+"keyAction.needModifier" = "Include ⌘, ⌃ or ⌥";
+"keyAction.captureError" = "Could not start recording. Check Accessibility access for dok.";
+
+"settings.glass.followsSystem" = "Follows System";

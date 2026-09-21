@@ -19,7 +19,7 @@ def main() -> None:
         ('scheme == "http" || scheme == "https"', "safe website scheme allowlist"),
         ("func openWebLink()", "default-browser website launch"),
         ("var isFolder: Bool", "folder classification"),
-        ('return "url:\\(app.path)"', "website icon cache identity"),
+        ('return "url:\\(app.id):\\(app.path)"', "per-shortcut website icon cache identity"),
     ]:
         assert needle in STATE, f"missing {description}"
 

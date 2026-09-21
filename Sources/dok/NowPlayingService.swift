@@ -26,12 +26,12 @@ class NowPlayingService: ObservableObject {
     var recentMusicAppBundleIdentifiers: (() -> [String])?
 
     private var isObserving = false
+    private var observationID = UUID()
     private var helperProcess: Process?
     private var seekProcesses: [Process] = []
     private var playbackCommandProcesses: [Process] = []
     private var helperRestartWorkItem: DispatchWorkItem?
     private var helperStartDate: Date = .distantPast
-    private let helperBuffer = LineBuffer()
     private var upkeepTimer: Timer?
     private var pendingClearWorkItem: DispatchWorkItem?
 
@@ -119,6 +119,14 @@ class NowPlayingService: ObservableObject {
         typealias R = @convention(c) (DispatchQueue) -> Void
         unsafeBitCast(sym, to: R.self)(.main)
         mrRegistered = true
+    }
+
+    private static func unregisterMRNotifications() {
+        guard mrRegistered, let h = mrHandle,
+              let sym = dlsym(h, "MRMediaRemoteUnregisterForNowPlayingNotifications") else { return }
+        typealias Unregister = @convention(c) () -> Void
+        unsafeBitCast(sym, to: Unregister.self)()
+        mrRegistered = false
     }
 
     // MARK: - Helper 后端
@@ -276,9 +284,21 @@ class NowPlayingService: ObservableObject {
 
     // MARK: - 生命周期
 
+    func setObservationEnabled(_ enabled: Bool) {
+        if enabled {
+            startObserving()
+        } else {
+            stopObserving()
+        }
+    }
+
     func startObserving() {
         guard !isObserving else { return }
         isObserving = true
+        observationID = UUID()
+        playingFrozenUntil = .distantPast
+        progressFrozenUntil = .distantPast
+        resetDisplayedProgressTracking()
         Self.ensureMRRegistered()
 
         // 进程内直读。在未被系统限制的机器上这一步即可拿到数据。
@@ -295,7 +315,9 @@ class NowPlayingService: ObservableObject {
     }
 
     func stopObserving() {
+        guard isObserving else { return }
         isObserving = false
+        observationID = UUID()
         upkeepTimer?.invalidate()
         upkeepTimer = nil
         pendingClearWorkItem?.cancel()
@@ -304,17 +326,22 @@ class NowPlayingService: ObservableObject {
         artworkSettleWorkItem = nil
         cancelPendingPlaybackIntent()
         stopHelper()
+        Self.unregisterMRNotifications()
     }
 
     deinit {
         pendingPlaybackIntentExpirationWorkItem?.cancel()
+        pendingClearWorkItem?.cancel()
+        artworkSettleWorkItem?.cancel()
         stopHelper()
         upkeepTimer?.invalidate()
+        if isObserving { Self.unregisterMRNotifications() }
     }
 
     // MARK: - 媒体控制
 
     func togglePlayPause() {
+        guard isObserving else { return }
         guard !trackName.isEmpty else {
             armPendingPlaybackIntent()
             activatePreferredRunningMusicApp()
@@ -328,6 +355,7 @@ class NowPlayingService: ObservableObject {
     }
 
     func nextTrack() {
+        guard isObserving else { return }
         cancelPendingPlaybackIntent()
         guard !trackName.isEmpty else { return }
         routePlaybackCommand(adapterCommand: 4, fallbackMediaKey: NX_KEYTYPE_NEXT)
@@ -335,6 +363,7 @@ class NowPlayingService: ObservableObject {
     }
 
     func previousTrack() {
+        guard isObserving else { return }
         cancelPendingPlaybackIntent()
         guard !trackName.isEmpty else { return }
         routePlaybackCommand(adapterCommand: 5, fallbackMediaKey: NX_KEYTYPE_PREVIOUS)
@@ -439,6 +468,7 @@ class NowPlayingService: ObservableObject {
 
     /// 使用 perl adapter 的一次性命令跳转播放位置。Swift 兜底后端没有命令通道。
     func seek(to seconds: TimeInterval) {
+        guard isObserving else { return }
         cancelPendingPlaybackIntent()
         guard activeBackend == .perlAdapter,
               canSeek,
@@ -496,12 +526,14 @@ class NowPlayingService: ObservableObject {
 
     /// 轮盘弹出时调用。常驻 helper 已持续同步，这里只补一次直读。
     func refreshForMenuPresentation() {
+        guard isObserving else { return }
         directRead()
     }
 
     // MARK: - 常驻 helper
 
     private func startHelper() {
+        guard isObserving else { return }
         guard helperProcess == nil else { return }
         guard let backend = backendQueue.first else {
             // 没有可用后端：保留播放控制，仅无法显示曲目信息。
@@ -511,6 +543,8 @@ class NowPlayingService: ObservableObject {
     }
 
     private func launchHelper(_ backend: HelperBackend) {
+        guard isObserving else { return }
+        let observationID = observationID
         let executable: URL
         let arguments: [String]
 
@@ -536,7 +570,9 @@ class NowPlayingService: ObservableObject {
             arguments = [scriptURL.path]
         }
 
-        helperBuffer.reset()
+        // Each process owns its buffer, so an old pipe cannot mix partial JSON
+        // into a replacement helper after a quick off/on toggle.
+        let helperBuffer = LineBuffer()
 
         let proc = Process()
         let pipe = Pipe()
@@ -545,22 +581,28 @@ class NowPlayingService: ObservableObject {
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
 
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        pipe.fileHandleForReading.readabilityHandler = { [weak self, weak proc] handle in
             let chunk = handle.availableData
-            guard !chunk.isEmpty, let self else { return }
-            let lines = self.helperBuffer.append(chunk)
+            guard !chunk.isEmpty else { return }
+            let lines = helperBuffer.append(chunk)
             guard !lines.isEmpty else { return }
             DispatchQueue.main.async {
+                guard let self, let proc,
+                      self.isObserving, self.observationID == observationID,
+                      self.helperProcess === proc else { return }
                 for line in lines {
                     self.handleHelperLine(line, backend: backend)
                 }
             }
         }
 
-        proc.terminationHandler = { [weak self] _ in
+        proc.terminationHandler = { [weak self] finishedProcess in
             pipe.fileHandleForReading.readabilityHandler = nil
             DispatchQueue.main.async {
-                self?.helperDidTerminate()
+                guard let self,
+                      self.isObserving, self.observationID == observationID,
+                      self.helperProcess === finishedProcess else { return }
+                self.helperDidTerminate()
             }
         }
 
@@ -571,6 +613,8 @@ class NowPlayingService: ObservableObject {
             activeBackend = backend
             canSeek = backend == .perlAdapter
         } catch {
+            pipe.fileHandleForReading.readabilityHandler = nil
+            proc.terminationHandler = nil
             NSLog("⚠️ 无法启动 now playing helper: %@", error.localizedDescription)
             helperProcess = nil
             activeBackend = nil
@@ -581,9 +625,10 @@ class NowPlayingService: ObservableObject {
     private func stopHelper() {
         helperRestartWorkItem?.cancel()
         helperRestartWorkItem = nil
-        if let proc = helperProcess, proc.isRunning {
+        if let proc = helperProcess {
             proc.terminationHandler = nil
-            proc.terminate()
+            (proc.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+            if proc.isRunning { proc.terminate() }
         }
         helperProcess = nil
         activeBackend = nil
@@ -606,8 +651,10 @@ class NowPlayingService: ObservableObject {
 
         // helper 意外退出时延迟重启，避免异常情况下反复拉起进程。
         helperRestartWorkItem?.cancel()
+        let observationID = observationID
         let restart = DispatchWorkItem { [weak self] in
-            guard let self, self.isObserving else { return }
+            guard let self, self.isObserving,
+                  self.observationID == observationID else { return }
             self.helperRestartWorkItem = nil
             self.startHelper()
         }
@@ -616,6 +663,7 @@ class NowPlayingService: ObservableObject {
     }
 
     private func handleHelperLine(_ line: Data, backend: HelperBackend) {
+        guard isObserving else { return }
         let snapshot: NowPlayingSnapshot?
         switch backend {
         case .perlAdapter:
@@ -639,6 +687,8 @@ class NowPlayingService: ObservableObject {
     ///   仅在没有常驻 helper 时为真 —— helper 在运行时它才是权威数据源，
     ///   直读被系统限制返回的空值不能用来覆盖它。
     private func directRead(applyEmpty: Bool = false) {
+        guard isObserving else { return }
+        let observationID = observationID
         guard let h = Self.mrHandle,
               let infoSym = dlsym(h, "MRMediaRemoteGetNowPlayingInfo"),
               let playingSym = dlsym(h, "MRMediaRemoteGetNowPlayingApplicationIsPlaying"),
@@ -657,15 +707,21 @@ class NowPlayingService: ObservableObject {
         let getPID = unsafeBitCast(pidSym, to: GetPID.self)
 
         getPID(.main) { [weak self] pid in
-            getPlaying(.main) { playing in
-                getInfo(.main) { info in
+            guard let self, self.isObserving,
+                  self.observationID == observationID else { return }
+            getPlaying(.main) { [weak self] playing in
+                guard let self, self.isObserving,
+                      self.observationID == observationID else { return }
+                getInfo(.main) { [weak self] info in
+                    guard let self, self.isObserving,
+                          self.observationID == observationID else { return }
                     let title = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
                     // 直读被系统限制时会返回空。此时不要覆盖 helper 推来的数据。
                     guard !title.isEmpty else {
-                        if applyEmpty { self?.scheduleClear() }
+                        if applyEmpty { self.scheduleClear() }
                         return
                     }
-                    self?.apply(NowPlayingSnapshot(
+                    self.apply(NowPlayingSnapshot(
                         pid: pid,
                         title: title,
                         artist: info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? "",
@@ -679,6 +735,7 @@ class NowPlayingService: ObservableObject {
 
     /// 播放器启停不一定触发 MediaRemote 通知，这里维持占位状态的准确性。
     private func upkeep() {
+        guard isObserving else { return }
         // helper 在跑时它是权威来源，直读的空结果不参与清理。
         directRead(applyEmpty: helperProcess == nil)
 
@@ -822,6 +879,7 @@ class NowPlayingService: ObservableObject {
     }
 
     private func apply(_ snapshot: NowPlayingSnapshot) {
+        guard isObserving else { return }
         // 报告方不是已知播放器时，说明是系统里其他发声来源，不予采信。
         let reportedBundleID = reportedBundleIdentifier(for: snapshot)
         if let bundleID = reportedBundleID,
@@ -929,8 +987,10 @@ class NowPlayingService: ObservableObject {
 
     private func scheduleArtworkSettle(trackKey: String, data: Data) {
         artworkSettleWorkItem?.cancel()
+        let observationID = observationID
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.isObserving,
+                  self.observationID == observationID else { return }
             self.artworkSettleWorkItem = nil
             // 曲目没再变、也没有新封面顶掉它 → 这张封面确实属于当前曲目
             guard "\(self.trackName)|\(self.artistName)" == trackKey,
@@ -943,6 +1003,7 @@ class NowPlayingService: ObservableObject {
 
     /// 元数据读空时延迟清理。切歌瞬间常有短暂空窗，立即清空会导致闪烁。
     private func scheduleClear() {
+        guard isObserving else { return }
         guard !trackName.isEmpty else {
             if runningMusicApp == nil {
                 clearNowPlaying()
@@ -953,8 +1014,10 @@ class NowPlayingService: ObservableObject {
         }
         guard pendingClearWorkItem == nil else { return }
 
+        let observationID = observationID
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.isObserving,
+                  self.observationID == observationID else { return }
             self.pendingClearWorkItem = nil
             self.clearNowPlaying()
         }

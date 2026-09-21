@@ -28,6 +28,10 @@ dok requires macOS 13.0 or later and ships as a Universal 2 app for Apple Silico
 
 dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Apple Silicon 与 Intel Mac。macOS 26 使用原生 Liquid Glass；macOS 13–15 自动使用兼容玻璃材质，功能和布局保持一致。
 
+## Development updates / 开发进展
+
+[View the changelog / 查看更新说明](CHANGELOG.md) — keyboard-action slots, website icons, undo, native-glass refinements, and Chinese search-input fixes / 按键动作槽位、网站图标、撤销、原生玻璃优化及中文搜索输入修正。
+
 ## Latest Update: 1.3.0 / 最新更新：1.3.0
 
 - One Universal 2 download now supports macOS 13+, Apple Silicon, and Intel Macs / 一个 Universal 2 安装包同时支持 macOS 13+、Apple Silicon 与 Intel Mac

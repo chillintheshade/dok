@@ -133,6 +133,7 @@ class DokWheelWindow: NSWindow {
     }
 
     func showAt(point: NSPoint) {
+        appState.centerControlHover = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
@@ -257,7 +258,7 @@ class DokWheelWindow: NSWindow {
             }
             self.dismiss()
             if let app = appToLaunch {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + (app.itemType == .keyAction ? 0 : 0.15)) {
                     self.launchApp(app)
                 }
             }
@@ -360,6 +361,20 @@ class DokWheelWindow: NSWindow {
         let mouseLocation = NSEvent.mouseLocation
         let newRecentIndex = satelliteIndex(at: mouseLocation)
         let newIndex = newRecentIndex == nil ? slotIndex(at: mouseLocation) : nil
+        let dx = mouseLocation.x - frame.midX
+        let dy = mouseLocation.y - frame.midY
+        let hoveredControl: AppState.CenterControlHover?
+        switch centerClickAction(dx: dx, dy: dy, distance: hypot(dx, dy)) {
+        case .openSettings: hoveredControl = .settings
+        case .previousTrack: hoveredControl = .previous
+        case .togglePlayPause: hoveredControl = .playback
+        case .nextTrack: hoveredControl = .next
+        case .seek: hoveredControl = .progress
+        case nil: hoveredControl = nil
+        }
+        if appState.centerControlHover != hoveredControl {
+            appState.centerControlHover = hoveredControl
+        }
 
         // 仅在值变化时更新，禁用 Core Animation 隐式动画防止闪烁
         if appState.selectedIndex != newIndex
@@ -486,6 +501,9 @@ class DokWheelWindow: NSWindow {
 
         let app = appState.settings.apps[index]
 
+        // A shortcut slot is an action, not a file drop destination.
+        guard app.itemType != .keyAction else { dismiss(); return false }
+
         // 读取拖入的文件 URL
         guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [
             .urlReadingFileURLsOnly: true
@@ -602,6 +620,18 @@ class DokWheelWindow: NSWindow {
     }
 
     func launchApp(_ app: AppItem) {
+        if app.itemType == .keyAction {
+            guard app.keyCombination != appState.settings.hotkey else {
+                dismiss()
+                KeyActionService.showError("keyAction.conflict")
+                return
+            }
+            if appState.isMenuVisible { dismiss() }
+            app.runKeyAction(ready: { [weak self] in
+                self?.isVisible != true
+            })
+            return
+        }
         if app.itemType == .fileOrFolder {
             NSLog("📂 Opening: %@", app.path)
             appState.recordOpenedFolder(app)
@@ -632,6 +662,7 @@ class DokWheelWindow: NSWindow {
     }
 
     func dismiss() {
+        appState.centerControlHover = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
@@ -664,6 +695,7 @@ class DokWheelWindow: NSWindow {
 
     /// 立即关闭（无动画），然后打开设置 — 确保设置窗口能拿到焦点
     func dismissForSettings() {
+        appState.centerControlHover = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()

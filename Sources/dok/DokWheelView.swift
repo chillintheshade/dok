@@ -1,6 +1,19 @@
 import SwiftUI
 import AppKit
 
+/// Visual feedback only. The window retains ownership of all hit testing and clicks.
+private struct CenterControlHoverFeedback: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(active && !reduceMotion ? 1.10 : 1)
+            .offset(y: active && !reduceMotion ? -1 : 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: active)
+    }
+}
+
 // MARK: - Selection Wedge Shape
 
 struct WedgeShape: Shape {
@@ -55,6 +68,7 @@ enum DokGlassMaterial {
     static let minimumMenuOpacity: Double = 0.15
 
     static func intensity(for menuOpacity: Double) -> Double {
+        if #available(macOS 27.0, *) { return 1 }
         let clamped = min(max(menuOpacity, minimumMenuOpacity), 1)
         return (clamped - minimumMenuOpacity) / (1 - minimumMenuOpacity)
     }
@@ -90,7 +104,7 @@ final class CompatibilityGlassEffectView: NSView {
         tintView.frame = bounds
     }
 
-    func apply(cornerRadius: CGFloat, intensity: Double) {
+    func apply(cornerRadius: CGFloat, intensity: Double, circular: Bool = false) {
         let clampedIntensity = min(max(intensity, 0), 1)
         let tintAlpha = DokGlassMaterial.tintBase + clampedIntensity * DokGlassMaterial.tintRange
 
@@ -100,6 +114,10 @@ final class CompatibilityGlassEffectView: NSView {
         effectView.layer?.cornerRadius = cornerRadius
         effectView.layer?.cornerCurve = .continuous
         effectView.layer?.masksToBounds = true
+        if circular {
+            layer?.cornerCurve = .circular
+            effectView.layer?.cornerCurve = .circular
+        }
         tintView.layer?.backgroundColor = NSColor.black.withAlphaComponent(tintAlpha).cgColor
     }
 }
@@ -107,6 +125,7 @@ final class CompatibilityGlassEffectView: NSView {
 struct NativeGlassSamplingLayer: NSViewRepresentable {
     let cornerRadius: CGFloat
     let intensity: Double
+    var circular: Bool = false
 
     func makeNSView(context: Context) -> NSView {
         if #available(macOS 26.0, *) {
@@ -116,7 +135,7 @@ struct NativeGlassSamplingLayer: NSViewRepresentable {
         }
 
         let glass = CompatibilityGlassEffectView()
-        glass.apply(cornerRadius: cornerRadius, intensity: intensity)
+        glass.apply(cornerRadius: cornerRadius, intensity: intensity, circular: circular)
         return glass
     }
 
@@ -124,25 +143,29 @@ struct NativeGlassSamplingLayer: NSViewRepresentable {
         if #available(macOS 26.0, *), let glass = view as? NSGlassEffectView {
             applyMaterial(to: glass)
         } else if let glass = view as? CompatibilityGlassEffectView {
-            glass.apply(cornerRadius: cornerRadius, intensity: intensity)
+            glass.apply(cornerRadius: cornerRadius, intensity: intensity, circular: circular)
         }
     }
 
     @available(macOS 26.0, *)
     private func applyMaterial(to glass: NSGlassEffectView) {
-        let clampedIntensity = min(max(intensity, 0), 1)
-        glass.style = .clear
         glass.cornerRadius = cornerRadius
-        // Keep the native compositor fully active. Density changes through tint,
-        // matching Control Center instead of fading the entire glass surface.
-        glass.alphaValue = 1
-        glass.tintColor = NSColor.black.withAlphaComponent(
-            CGFloat(DokGlassMaterial.tintBase + clampedIntensity * DokGlassMaterial.tintRange)
-        )
-        glass.clipsToBounds = true
-        glass.layer?.cornerRadius = cornerRadius
-        glass.layer?.cornerCurve = .continuous
-        glass.layer?.masksToBounds = true
+        if #available(macOS 27.0, *) {
+            // Use native regular glass so macOS controls its material appearance.
+            glass.style = .regular
+            glass.alphaValue = 1
+        } else {
+            glass.style = .clear
+            let clampedIntensity = min(max(intensity, 0), 1)
+            glass.alphaValue = DokGlassMaterial.minimumMenuOpacity
+                + (1 - DokGlassMaterial.minimumMenuOpacity) * clampedIntensity
+        }
+        glass.tintColor = nil
+        // Let the native glass shape its own edge for both the wheel and satellites.
+        // A second bounds mask clips the native edge at the cardinal points.
+        glass.clipsToBounds = false
+        glass.layer?.masksToBounds = false
+        glass.layer?.cornerRadius = 0
     }
 }
 
@@ -325,6 +348,7 @@ private struct SlotNotificationBadge: View {
 // MARK: - DokWheelView
 
 struct DokWheelView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var appState: AppState
     var onAppSelected: ((AppItem) -> Void)?
     var onSettingsTapped: (() -> Void)?
@@ -574,8 +598,10 @@ struct DokWheelView: View {
         return ZStack {
             NativeGlassSamplingLayer(
                 cornerRadius: baseDiameter / 2,
-                intensity: glassMaterialIntensity
+                intensity: glassMaterialIntensity,
+                circular: true
             )
+            .frame(width: baseDiameter, height: baseDiameter)
             Circle()
                 .stroke(Color.white.opacity(0.22 * glassMaterialIntensity), lineWidth: 0.55)
 
@@ -613,7 +639,7 @@ struct DokWheelView: View {
                     .fill(.primary)
                     .frame(width: 4, height: 4)
                     .opacity(0.85)
-                    .offset(y: baseDiameter / 2 + 5)
+                    .offset(y: baseDiameter / 2 - 5)
             }
         }
         .frame(width: baseDiameter, height: baseDiameter)
@@ -658,7 +684,11 @@ struct DokWheelView: View {
                 style: StrokeStyle(lineWidth: musicProgressLineWidth, lineCap: .round)
             )
             .rotationEffect(.degrees(-90))
-            .frame(width: musicProgressDiameter, height: musicProgressDiameter)
+            .frame(
+                width: musicProgressDiameter + (appState.centerControlHover == .progress && !reduceMotion ? 2 : 0),
+                height: musicProgressDiameter + (appState.centerControlHover == .progress && !reduceMotion ? 2 : 0)
+            )
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: appState.centerControlHover == .progress)
             .allowsHitTesting(false)
     }
 
@@ -702,6 +732,7 @@ struct DokWheelView: View {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: centerSettingsIconSize, weight: .medium))
                     .foregroundStyle(.tertiary)
+                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .settings))
                     .transition(MenuMotion.centerContentTransition)
             }
 
@@ -759,14 +790,17 @@ struct DokWheelView: View {
                 Image(systemName: "backward.fill")
                     .font(.system(size: musicSecondaryControlSize))
                     .foregroundStyle(.secondary)
+                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .previous))
 
                 Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: musicPrimaryControlSize))
                     .foregroundStyle(.primary)
+                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .playback))
 
                 Image(systemName: "forward.fill")
                     .font(.system(size: musicSecondaryControlSize))
                     .foregroundStyle(.secondary)
+                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .next))
             }
 
             Spacer().frame(height: musicVerticalGap)
@@ -775,6 +809,7 @@ struct DokWheelView: View {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 12.5 * centerMusicControlScale, weight: .medium))
                 .foregroundStyle(.quaternary)
+                .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .settings))
         }
         .allowsHitTesting(false)
     }

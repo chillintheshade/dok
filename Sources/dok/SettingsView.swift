@@ -28,6 +28,15 @@ private enum SettingsDesign {
 }
 
 private extension View {
+    @ViewBuilder
+    func settingsNavigationFocusEffect() -> some View {
+        if #available(macOS 14.0, *) {
+            self.focusEffectDisabled()
+        } else {
+            self
+        }
+    }
+
     func settingsInsetSurface(emphasized: Bool = false) -> some View {
         background(
             emphasized ? SettingsDesign.emphasizedSurface : SettingsDesign.insetSurface,
@@ -43,8 +52,9 @@ private struct SettingsRootGlassLayer: NSViewRepresentable {
             glass.style = .regular
             glass.cornerRadius = 18
             glass.alphaValue = 1
-            glass.clipsToBounds = true
-            glass.layer?.cornerCurve = .continuous
+            // The native glass owns its edge; avoid a second view-bounds crop.
+            glass.clipsToBounds = false
+            glass.layer?.masksToBounds = false
             return glass
         }
 
@@ -101,6 +111,8 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: SettingsTab
+    @State private var hoveredTab: SettingsTab?
+    @FocusState private var focusedTab: SettingsTab?
     let onSelectTab: (SettingsTab) -> Void
 
     init(selectedTab: SettingsTab, onSelectTab: @escaping (SettingsTab) -> Void = { _ in }) {
@@ -111,6 +123,7 @@ struct SettingsView: View {
     var body: some View {
         ZStack {
             SettingsRootGlassLayer()
+                .ignoresSafeArea()
                 .allowsHitTesting(false)
 
             HStack(spacing: 0) {
@@ -138,16 +151,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(SettingsTab.allCases) { tab in
                 Button {
-                    guard selectedTab != tab else { return }
-                    NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
-                    if reduceMotion {
-                        selectedTab = tab
-                    } else {
-                        withAnimation(SettingsDesign.standardMotion) {
-                            selectedTab = tab
-                        }
-                    }
-                    onSelectTab(tab)
+                    selectTab(tab)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: tab.symbol)
@@ -161,16 +165,39 @@ struct SettingsView: View {
                     .frame(height: SettingsDesign.navigationRowHeight)
                     .contentShape(Rectangle())
                     .background {
-                        if selectedTab == tab {
+                        if selectedTab == tab || hoveredTab == tab || focusedTab == tab {
                             RoundedRectangle(
                                 cornerRadius: SettingsDesign.navigationRadius,
                                 style: .continuous
                             )
-                            .fill(SettingsDesign.selectedSurface)
+                            .fill(selectedTab == tab ? SettingsDesign.selectedSurface : SettingsDesign.hoverSurface)
                         }
                     }
                 }
                 .buttonStyle(.plain)
+                .focusable(true)
+                .focused($focusedTab, equals: tab)
+                .settingsNavigationFocusEffect()
+                .onHover { inside in
+                    if inside { hoveredTab = tab }
+                    else if hoveredTab == tab { hoveredTab = nil }
+                }
+                .animation(reduceMotion ? nil : SettingsDesign.quickMotion, value: hoveredTab == tab)
+                .onMoveCommand { direction in
+                    guard focusedTab == tab,
+                          let index = SettingsTab.allCases.firstIndex(of: tab) else { return }
+                    let offset: Int
+                    switch direction {
+                    case .up: offset = -1
+                    case .down: offset = 1
+                    default: return
+                    }
+                    let next = index + offset
+                    guard SettingsTab.allCases.indices.contains(next) else { return }
+                    let destination = SettingsTab.allCases[next]
+                    focusedTab = destination
+                    selectTab(destination)
+                }
                 .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
             }
             Spacer(minLength: 0)
@@ -180,6 +207,17 @@ struct SettingsView: View {
         .padding(.bottom, 16)
         .frame(width: SettingsDesign.sidebarWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func selectTab(_ tab: SettingsTab) {
+        guard selectedTab != tab else { return }
+        NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
+        if reduceMotion {
+            selectedTab = tab
+        } else {
+            withAnimation(SettingsDesign.standardMotion) { selectedTab = tab }
+        }
+        onSelectTab(tab)
     }
 
     @ViewBuilder
@@ -201,11 +239,23 @@ struct AppsSettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingAppPicker = false
+    @State private var editingKeyAction: AppItem?
     @State private var selectedIndex: Int? = nil
     @State private var draggingIndex: Int? = nil
     @State private var dragTranslation: CGSize = .zero
     @State private var dragTargetIndex: Int? = nil
     @State private var isInDeleteZone: Bool = false
+    @State private var removedItems: [RemovedWheelItem] = []
+    @Namespace private var wheelItemAnimation
+
+    private struct RemovedWheelItem {
+        let item: AppItem
+        let index: Int
+    }
+
+    private var editAnimation: Animation? {
+        reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.32)
+    }
 
     private let pieSize: CGFloat = 452
     private var previewMenuRadius: CGFloat { appState.settings.menuRadius }
@@ -243,16 +293,38 @@ struct AppsSettingsView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            appsPreviewPane
-            appsControlPane
+        Group {
+            if let item = editingKeyAction {
+                KeyActionEditor(appState: appState, item: item, onCancel: {
+                    editingKeyAction = nil
+                }, onSave: saveKeyAction)
+                .id(item.id)
+            } else {
+                HStack(alignment: .center, spacing: 8) {
+                    appsPreviewPane
+                    appsControlPane
+                }
+                .padding(.horizontal, 12)
+            }
         }
-        .padding(.horizontal, 12)
         .padding(.vertical, 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .sheet(isPresented: $showingAppPicker) {
-            AppPickerView(appState: appState, isPresented: $showingAppPicker)
+            AppPickerView(appState: appState, isPresented: $showingAppPicker) {
+                removedItems.removeAll()
+            }
         }
+    }
+
+    private func saveKeyAction(_ result: AppItem) {
+        if let index = appState.settings.apps.firstIndex(where: { $0.id == result.id }) {
+            appState.settings.apps[index] = result
+        } else if appState.settings.apps.count < maxSlots {
+            removedItems.removeAll()
+            appState.settings.apps.append(result)
+        }
+        IconCache.shared.invalidate()
+        editingKeyAction = nil
     }
 
     // MARK: - 底部按钮
@@ -283,6 +355,7 @@ struct AppsSettingsView: View {
                 customIconData: AppItem.persistentCustomIconData(for: url)
             )
             withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+                removedItems.removeAll()
                 appState.settings.apps.append(item)
             }
             IconCache.shared.invalidate()
@@ -291,39 +364,71 @@ struct AppsSettingsView: View {
 
     private func addWebLink() {
         guard appState.settings.apps.count < maxSlots else { return }
+        editWebLink(nil)
+    }
+
+    private func editWebLink(_ existing: AppItem?) {
+        guard existing != nil || appState.settings.apps.count < maxSlots else { return }
 
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
         field.placeholderString = Loc.string("link.placeholder")
+        field.stringValue = existing?.path ?? ""
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        nameField.placeholderString = Loc.string("link.name.placeholder")
+        nameField.stringValue = existing?.name ?? ""
+        let accessory = NSStackView(views: [
+            NSTextField(labelWithString: Loc.string("link.address")), field,
+            NSTextField(labelWithString: Loc.string("link.name")), nameField,
+        ])
+        accessory.orientation = .vertical
+        accessory.alignment = .leading
+        accessory.spacing = 6
+        accessory.frame = NSRect(x: 0, y: 0, width: 320, height: 104)
+        for input in [field, nameField] {
+            input.widthAnchor.constraint(equalToConstant: 320).isActive = true
+        }
 
         let alert = NSAlert()
-        alert.messageText = Loc.string("link.title")
+        alert.messageText = Loc.string(existing == nil ? "link.title" : "link.edit.title")
         alert.informativeText = Loc.string("link.message")
         alert.alertStyle = .informational
-        alert.accessoryView = field
-        alert.addButton(withTitle: Loc.string("link.add"))
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: Loc.string(existing == nil ? "link.add" : "link.save"))
         alert.addButton(withTitle: Loc.string("link.cancel"))
         alert.window.initialFirstResponder = field
 
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard let url = AppItem.normalizedWebURL(from: field.stringValue) else {
-            let invalidAlert = NSAlert()
-            invalidAlert.messageText = Loc.string("link.invalid.title")
-            invalidAlert.informativeText = Loc.string("link.invalid.message")
-            invalidAlert.alertStyle = .warning
-            invalidAlert.runModal()
-            return
+        var validatedURL: URL?
+        while validatedURL == nil {
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            validatedURL = AppItem.normalizedWebURL(from: field.stringValue)
+            if validatedURL == nil {
+                alert.informativeText = Loc.string("link.invalid.message")
+                alert.window.initialFirstResponder = field
+            }
         }
+        guard let url = validatedURL else { return }
 
-        let item = AppItem(
-            name: url.host ?? url.absoluteString,
+        let customName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var item = AppItem(
+            name: customName.isEmpty ? (url.host ?? url.absoluteString) : customName,
             bundleIdentifier: "",
             path: url.absoluteString,
             itemType: .webLink
         )
-        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
-            appState.settings.apps.append(item)
+        if let existing {
+            item.id = existing.id
+            if existing.path == item.path { item.customIconData = existing.customIconData }
         }
         IconCache.shared.invalidate()
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+            if let index = appState.settings.apps.firstIndex(where: { $0.id == item.id }) {
+                appState.settings.apps[index] = item
+            } else if existing == nil {
+                removedItems.removeAll()
+                appState.settings.apps.append(item)
+            }
+        }
+        if item.customIconData == nil { appState.refreshWebsiteIcon(for: item) }
     }
 
     private func restoreDefaultsWithConfirmation() {
@@ -338,6 +443,7 @@ struct AppsSettingsView: View {
 
         withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
             selectedIndex = nil
+            removedItems.removeAll()
             appState.settings.apps = Array(AppState.defaultApps().prefix(maxSlots))
         }
     }
@@ -437,6 +543,17 @@ struct AppsSettingsView: View {
             ) {
                 addWebLink()
             }
+
+            quietActionDivider
+
+            actionTile(
+                Loc.string("settings.addKeyAction"),
+                subtitle: Loc.string("settings.addKeyAction.subtitle"),
+                icon: "keyboard"
+            ) {
+                editingKeyAction = AppItem(name: "", bundleIdentifier: "", path: "", itemType: .keyAction)
+            }
+            .disabled(appState.settings.apps.count >= maxSlots)
 
             quietActionDivider
 
@@ -549,12 +666,53 @@ struct AppsSettingsView: View {
             }
             // 3. 选中状态（点击图标）
             else if let idx = selectedIndex, idx < appState.settings.apps.count {
-                Text(appState.settings.apps[idx].displayName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .transition(.scale(scale: 0.75).combined(with: .opacity))
+                let item = appState.settings.apps[idx]
+                VStack(spacing: 7) {
+                    Text(item.displayName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    if item.itemType == .keyAction {
+                        Button(item.keyCombination?.displayString ?? Loc.string("keyAction.record")) { editingKeyAction = item }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    if item.itemType == .webLink {
+                        Button(Loc.string("link.edit.title")) { editWebLink(item) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .settingsInsetSurface(emphasized: true)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .transition(.opacity)
+            }
+            else if let removed = removedItems.last {
+                Button(action: undoLastRemoval) {
+                    VStack(spacing: 5) {
+                        Image(nsImage: removed.item.icon)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 28, height: 28)
+                            .matchedGeometryEffect(id: removed.item.id, in: wheelItemAnimation)
+                        Label(Loc.string("wheel.undoRemoval"), systemImage: "arrow.uturn.backward")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(removed.item.displayName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: max(innerRadius * 2 - 10, 90))
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.primary)
+                .disabled(appState.settings.apps.count >= maxSlots)
+                .help(Loc.string(appState.settings.apps.count >= maxSlots ? "wheel.undoFull" : "wheel.undoRemoval"))
+                .transition(.opacity)
             }
             // 4. 空状态
             else if appState.settings.apps.isEmpty {
@@ -573,9 +731,10 @@ struct AppsSettingsView: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .animation(SettingsDesign.standardMotion, value: selectedIndex)
-        .animation(SettingsDesign.standardMotion, value: isInDeleteZone)
-        .animation(SettingsDesign.standardMotion, value: draggingIndex)
+        .animation(reduceMotion ? nil : SettingsDesign.standardMotion, value: selectedIndex)
+        .animation(reduceMotion ? nil : SettingsDesign.standardMotion, value: isInDeleteZone)
+        .animation(reduceMotion ? nil : SettingsDesign.standardMotion, value: draggingIndex)
+        .animation(editAnimation, value: removedItems.last?.item.id)
     }
 
     // MARK: - 图标
@@ -629,8 +788,10 @@ struct AppsSettingsView: View {
         return ZStack {
             NativeGlassSamplingLayer(
                 cornerRadius: baseDiameter / 2,
-                intensity: glassMaterialIntensity
+                intensity: glassMaterialIntensity,
+                circular: true
             )
+            .frame(width: baseDiameter, height: baseDiameter)
             Circle()
                 .stroke(Color.white.opacity(0.22 * glassMaterialIntensity), lineWidth: 0.55)
 
@@ -658,7 +819,7 @@ struct AppsSettingsView: View {
                     .fill(.primary)
                     .frame(width: 4, height: 4)
                     .opacity(0.85)
-                    .offset(y: baseDiameter / 2 + 5)
+                    .offset(y: baseDiameter / 2 - 5)
             }
         }
         .frame(width: baseDiameter, height: baseDiameter)
@@ -695,6 +856,7 @@ struct AppsSettingsView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: iconSize, height: iconSize)
+                .matchedGeometryEffect(id: app.id, in: wheelItemAnimation)
                 .overlay {
                     if isDragging && isInDeleteZone {
                         Circle()
@@ -719,6 +881,14 @@ struct AppsSettingsView: View {
         .onTapGesture {
             withAnimation(SettingsDesign.standardMotion) {
                 selectedIndex = selectedIndex == index ? nil : index
+            }
+        }
+        .contextMenu {
+            if app.itemType == .keyAction {
+                Button(Loc.string("keyAction.title")) { editingKeyAction = app }
+            }
+            if app.itemType == .webLink {
+                Button(Loc.string("link.edit.title")) { editWebLink(app) }
             }
         }
     }
@@ -774,11 +944,10 @@ struct AppsSettingsView: View {
                 let inDelete = distFromCenter < innerRadius
                 let target = slotIndex(at: CGPoint(x: absX, y: absY), total: total)
 
-                withAnimation(
-                    reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.52)
-                ) {
+                withAnimation(inDelete ? editAnimation : (reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.52))) {
                     if inDelete {
                         // 拖到中心 → 删除
+                        removedItems.append(RemovedWheelItem(item: appState.settings.apps[index], index: index))
                         appState.settings.apps.remove(at: index)
                     } else if target != index {
                         // 拖到其它槽位 → 重新排序
@@ -792,6 +961,20 @@ struct AppsSettingsView: View {
                     isInDeleteZone = false
                 }
             }
+    }
+
+    private func undoLastRemoval() {
+        guard let removed = removedItems.last,
+              appState.settings.apps.count < maxSlots,
+              !appState.settings.apps.contains(where: { $0.id == removed.item.id }) else { return }
+        withAnimation(editAnimation) {
+            selectedIndex = nil
+            _ = removedItems.popLast()
+            appState.settings.apps.insert(removed.item, at: min(removed.index, appState.settings.apps.count))
+        }
+        if removed.item.itemType == .webLink && removed.item.customIconData == nil {
+            appState.refreshWebsiteIcon(for: removed.item)
+        }
     }
 
     private func slotIndex(at point: CGPoint, total: Int) -> Int {
@@ -811,6 +994,7 @@ struct AppsSettingsView: View {
 struct AppPickerView: View {
     let appState: AppState
     @Binding var isPresented: Bool
+    var onAdd: () -> Void = {}
     @State private var searchText = ""
     @State private var installedApps: [AppItem] = []
     @State private var recentlyAdded: Set<String> = []
@@ -895,6 +1079,7 @@ struct AppPickerView: View {
     func addApp(_ app: AppItem) {
         guard appState.settings.apps.count < AppState.maxSlots else { return }
         withAnimation(SettingsDesign.standardMotion) {
+            onAdd()
             appState.settings.apps.append(app)
             recentlyAdded.insert(app.bundleIdentifier)
         }
@@ -908,9 +1093,235 @@ struct AppPickerView: View {
     }
 }
 
+/// Own the NSTextInputClient instead of borrowing a sheet's shared field editor.
+private final class KeyActionNameTextView: NSTextView {
+    var attached: ((KeyActionNameTextView) -> Void)?
+    var placeholder = Loc.string("keyAction.name")
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// A sheet can own firstResponder while its app has no key window. In that
+    /// state AppKit accepts text events but cannot display the caret or run IME.
+    @discardableResult
+    func activateForEditing() -> Bool {
+        guard let window, window.isVisible else { return false }
+        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        guard NSApp.isActive, window.isKeyWindow, window.makeFirstResponder(self) else { return false }
+        inputContext?.activate()
+        needsDisplay = true
+        return true
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { attached?(self) }
+    }
+    override func mouseDown(with event: NSEvent) {
+        if let window, !NSApp.isActive {
+            NotificationCenter.default.post(name: .settingsInputFocusRequested, object: window)
+        }
+        activateForEditing()
+        super.mouseDown(with: event)
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        if string.isEmpty && !hasMarkedText() {
+            (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
+                withAttributes: [.font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.placeholderTextColor])
+        }
+    }
+}
+
+private struct KeyActionNameInput: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.borderType = .bezelBorder
+        scroll.hasVerticalScroller = false
+        scroll.hasHorizontalScroller = false
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
+        let view = KeyActionNameTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 24))
+        view.isEditable = true
+        view.isSelectable = true
+        view.isRichText = false
+        view.importsGraphics = false
+        view.allowsUndo = true
+        view.isFieldEditor = true
+        view.font = .systemFont(ofSize: 13)
+        view.textColor = .textColor
+        view.insertionPointColor = .labelColor
+        view.backgroundColor = .textBackgroundColor
+        view.textContainerInset = NSSize(width: 5, height: 4)
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.maximumNumberOfLines = 1
+        view.textContainer?.widthTracksTextView = false
+        view.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: 28)
+        view.isHorizontallyResizable = true
+        view.isVerticallyResizable = false
+        view.autoresizingMask = [.width]
+        view.setAccessibilityLabel(Loc.string("keyAction.name"))
+        view.delegate = context.coordinator
+        view.attached = { [weak coordinator = context.coordinator] view in coordinator?.focusWhenReady(view) }
+        scroll.documentView = view
+        return scroll
+    }
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let view = scroll.documentView as? KeyActionNameTextView, !view.hasMarkedText() else { return }
+        if view.string != text {
+            let selection = view.selectedRange()
+            view.string = text
+            let count = (text as NSString).length
+            let location = min(selection.location, count)
+            view.setSelectedRange(NSRange(location: location, length: min(selection.length, count - location)))
+        }
+        view.needsDisplay = true
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: KeyActionNameInput
+        private var didRequestWindowActivation = false
+        init(_ parent: KeyActionNameInput) { self.parent = parent }
+        func textDidChange(_ notification: Notification) {
+            guard let view = notification.object as? KeyActionNameTextView else { return }
+            view.needsDisplay = true
+            // Do not publish an IME's provisional text back through SwiftUI.
+            guard !view.hasMarkedText() else { return }
+            parent.text = view.string
+        }
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) { return true }
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                textView.window?.selectNextKeyView(textView); return true
+            }
+            if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+                textView.window?.selectPreviousKeyView(textView); return true
+            }
+            return false
+        }
+        func focusWhenReady(_ view: KeyActionNameTextView, attempt: Int = 0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0 : 0.1)) { [weak self, weak view] in
+                guard let self, let view, let window = view.window, attempt < 20,
+                      !KeyActionService.isRecording else { return }
+                if window.isVisible {
+                    if !self.didRequestWindowActivation {
+                        self.didRequestWindowActivation = true
+                        NotificationCenter.default.post(name: .settingsInputFocusRequested, object: window)
+                    }
+                    window.initialFirstResponder = view
+                    if view.activateForEditing() { return }
+                }
+                self.focusWhenReady(view, attempt: attempt + 1)
+            }
+        }
+    }
+}
+
+private struct KeyActionRecorderInput: NSViewRepresentable {
+    @Binding var value: HotkeyConfig?
+    @Binding var recording: Bool
+    func makeNSView(context: Context) -> KeyActionRecorderControl { KeyActionRecorderControl(frame: .zero) }
+    func updateNSView(_ control: KeyActionRecorderControl, context: Context) {
+        control.value = value
+        control.onChange = { value = $0 }
+        control.onRecordingChanged = { recording = $0 }
+    }
+    static func dismantleNSView(_ control: KeyActionRecorderControl, coordinator: ()) {
+        control.onRecordingChanged = nil
+        control.onChange = nil
+        control.stop(reason: "editor-dismissed")
+    }
+}
+
+private struct KeyActionEditor: View {
+    @ObservedObject var appState: AppState
+    var item: AppItem
+    var onCancel: () -> Void
+    var onSave: (AppItem) -> Void
+    @State private var name = ""
+    @State private var combo: HotkeyConfig?
+    @State private var recording = false
+    @State private var targetBundle = ""
+    @State private var targetName = ""
+
+    private var conflict: Bool { combo == appState.settings.hotkey }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(Loc.string("keyAction.title")).font(.headline)
+            KeyActionNameInput(text: $name)
+                .frame(height: 30)
+            HStack {
+                Text(Loc.string("keyAction.combination"))
+                Spacer()
+                KeyActionRecorderInput(value: $combo, recording: $recording)
+                    .frame(width: 190, height: 28)
+            }
+            Text(Loc.string(conflict ? "keyAction.conflict" : "keyAction.hint"))
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text(Loc.string("keyAction.target"))
+                Spacer()
+                Button(targetBundle.isEmpty ? Loc.string("keyAction.currentApp") : targetName) { chooseTarget() }
+                if !targetBundle.isEmpty {
+                    Button(Loc.string("keyAction.clearTarget")) { targetBundle = ""; targetName = "" }
+                }
+            }
+            Text(Loc.string("keyAction.targetHint")).font(.caption).foregroundStyle(.secondary)
+            if !AXIsProcessTrusted() {
+                Text(Loc.string("keyAction.permission")).font(.caption).foregroundStyle(.secondary)
+                Button(Loc.string("keyAction.openAccessibility")) {
+                    KeyActionService.openAccessibility()
+                }
+            }
+            HStack {
+                Button(Loc.string("link.cancel"), action: onCancel)
+                Spacer()
+                Button(Loc.string("link.save")) {
+                    var result = item
+                    result.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    result.keyCombination = combo
+                    result.bundleIdentifier = targetBundle
+                    result.path = ""
+                    onSave(result)
+                }
+                .disabled(recording || combo == nil || conflict || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .tint(.primary)
+        .onAppear {
+            name = item.name
+            combo = item.keyCombination
+            targetBundle = item.bundleIdentifier
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: targetBundle) {
+                targetName = FileManager.default.displayName(atPath: url.path)
+            } else { targetName = targetBundle }
+        }
+    }
+
+    private func chooseTarget() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url,
+           let bundle = Bundle(url: url)?.bundleIdentifier,
+           bundle != Bundle.main.bundleIdentifier {
+            targetBundle = bundle
+            targetName = FileManager.default.displayName(atPath: url.path)
+        }
+    }
+
+}
+
 // MARK: - 通用设置
 
 private struct SettingsGroup<Content: View>: View {
+    @Environment(\.colorSchemeContrast) private var contrast
     let title: String
     @ViewBuilder var content: Content
 
@@ -924,7 +1335,10 @@ private struct SettingsGroup<Content: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .settingsInsetSurface()
+            .background(
+                Color.primary.opacity(contrast == .increased ? 0.065 : 0.025),
+                in: RoundedRectangle(cornerRadius: SettingsDesign.surfaceRadius, style: .continuous)
+            )
         }
     }
 }
@@ -1139,13 +1553,20 @@ struct GeneralSettingsView: View {
 
             SettingDivider()
 
-            compactSlider(
-                title: Loc.string("settings.opacity"),
-                value: $appState.settings.menuOpacity,
-                range: 0.15...1.0,
-                step: 0.05,
-                percentage: true
-            )
+            if #available(macOS 27.0, *) {
+                SettingRow(title: "Liquid Glass") {
+                    Text(Loc.string("settings.glass.followsSystem"))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                compactSlider(
+                    title: Loc.string("settings.opacity"),
+                    value: $appState.settings.menuOpacity,
+                    range: 0.15...1.0,
+                    step: 0.05,
+                    percentage: true
+                )
+            }
         }
     }
 
@@ -1378,50 +1799,107 @@ struct KeyCap: View {
 
 // MARK: - NSSearchField 包装
 
+private final class AppPickerSearchField: NSSearchField {
+    var onAttachedToWindow: ((AppPickerSearchField) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        onAttachedToWindow?(self)
+    }
+}
+
 struct SearchField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
 
     func makeNSView(context: Context) -> NSSearchField {
-        let field = NSSearchField()
+        let field = AppPickerSearchField()
         field.placeholderString = placeholder
         field.delegate = context.coordinator
+        field.isEditable = true
+        field.isSelectable = true
+        field.isEnabled = true
         field.sendsSearchStringImmediately = true
-        // sheet 窗口 IME 修复：激活 app + 让 sheet 成为 key window + 聚焦搜索框
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            NSApp.activate(ignoringOtherApps: true)
-            if let window = field.window {
-                window.makeKey()
-                window.makeFirstResponder(field)
-            }
-        }
-        // 双重保障：延迟再试一次
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if let window = field.window, window.firstResponder !== field.currentEditor() {
-                NSApp.activate(ignoringOtherApps: true)
-                window.makeKey()
-                window.makeFirstResponder(field)
-            }
+        field.onAttachedToWindow = { [weak coordinator = context.coordinator] field in
+            coordinator?.focusWhenAttached(field)
         }
         return field
     }
 
     func updateNSView(_ nsView: NSSearchField, context: Context) {
-        if nsView.stringValue != text {
-            nsView.stringValue = text
+        context.coordinator.parent = self
+        if let editor = nsView.currentEditor() as? NSTextView, editor.hasMarkedText() {
+            return
         }
+        if nsView.stringValue != text { nsView.stringValue = text }
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+    static func dismantleNSView(_ nsView: NSSearchField, coordinator: Coordinator) {
+        coordinator.finishInitialFocus()
+        (nsView as? AppPickerSearchField)?.onAttachedToWindow = nil
+        nsView.delegate = nil
     }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     class Coordinator: NSObject, NSSearchFieldDelegate {
-        let parent: SearchField
+        var parent: SearchField
+        private var didApplyInitialFocus = false
+        private var observers: [NSObjectProtocol] = []
+        private weak var attachedField: AppPickerSearchField?
+
         init(_ parent: SearchField) { self.parent = parent }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+        fileprivate func focusWhenAttached(_ field: AppPickerSearchField) {
+            guard !didApplyInitialFocus, attachedField !== field,
+                  let window = field.window else { return }
+            attachedField = field
+            window.initialFirstResponder = field
+            // Wait for AppKit's sheet and app activation to finish. Never make
+            // the window key or reactivate the app from an input control.
+            for (name, object) in [
+                (NSWindow.didBecomeKeyNotification, window as AnyObject),
+                (NSApplication.didBecomeActiveNotification, NSApp as AnyObject)
+            ] {
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: name, object: object, queue: .main
+                ) { [weak self] _ in self?.scheduleInitialFocus() })
+            }
+            scheduleInitialFocus()
+        }
+
+        private func scheduleInitialFocus() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.didApplyInitialFocus,
+                      let field = self.attachedField, let window = field.window,
+                      window.isVisible, window.isKeyWindow, NSApp.isActive else { return }
+                if field.currentEditor() != nil {
+                    self.finishInitialFocus()
+                    return
+                }
+                if window.makeFirstResponder(field) { self.finishInitialFocus() }
+            }
+        }
+
+        fileprivate func finishInitialFocus() {
+            didApplyInitialFocus = true
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers.removeAll()
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            // A user click or AppKit's initial responder already owns input.
+            // Cancel pending work before the first IME composition begins.
+            finishInitialFocus()
+        }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSSearchField else { return }
+            if let editor = field.currentEditor() as? NSTextView, editor.hasMarkedText() {
+                return
+            }
             parent.text = field.stringValue
         }
     }

@@ -22,6 +22,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var hotKeyRef: EventHotKeyRef?
     var isMenuOpen = false
     private var settingsKeyMonitor: Any?
+    private var settingsDeactivationWorkItem: DispatchWorkItem?
+    private var settingsActivationGeneration = 0
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseEventTap: CFMachPort?
@@ -43,6 +45,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupMainMenu()
         setupStatusBar()
         registerHotKey()
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsInputFocusRequested(_:)),
+            name: .settingsInputFocusRequested, object: nil)
 
         // 监听快捷键修改
         NotificationCenter.default.addObserver(
@@ -68,8 +72,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: .mouseTriggerChanged, object: nil
         )
 
-        // 启动 Now Playing 监听
-        appState.nowPlaying.startObserving()
+        // 音乐显示关闭时不启动常驻 helper 或后台巡检。
+        appState.nowPlaying.setObservationEnabled(appState.settings.showMusicControl)
 
         // 注册鼠标按键触发
         setupMouseTrigger()
@@ -82,6 +86,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.showOnboarding()
             }
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        appState.nowPlaying.stopObserving()
     }
 
     func showOnboarding() {
@@ -216,11 +224,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if let app = wheelWindow?.selectedAppForActivation() {
             closeDok()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (app.itemType == .keyAction ? 0 : 0.1)) {
                 self.wheelWindow?.launchApp(app) ?? {
                     if app.itemType == .fileOrFolder {
                         self.appState.recordOpenedFolder(app)
                         app.openFileOrFolder()
+                    } else if app.itemType == .keyAction {
+                        app.runKeyAction()
                     } else if app.itemType == .webLink {
                         app.openWebLink()
                     } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
@@ -416,6 +426,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             hotKeyRef = nil
         }
 
+        guard !KeyActionService.isRecording else { return }
         let hotkey = appState.settings.hotkey
         let hotkeyKeyCode: UInt32 = UInt32(hotkey.keyCode)
         let carbonModifiers: UInt32 = hotkey.carbonModifiers
@@ -488,12 +499,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // 按住模式：松开 → 执行选中并关闭
             if let app = wheelWindow?.selectedAppForActivation() {
                 closeDok()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + (app.itemType == .keyAction ? 0 : 0.1)) {
                     self.wheelWindow?.launchApp(app) ?? {
                         // wheelWindow 已关闭，直接启动
                         if app.itemType == .fileOrFolder {
                             self.appState.recordOpenedFolder(app)
                             app.openFileOrFolder()
+                        } else if app.itemType == .keyAction {
+                            app.runKeyAction()
                         } else if app.itemType == .webLink {
                             app.openWebLink()
                         } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
@@ -555,6 +568,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func openSettings() {
+        settingsDeactivationWorkItem?.cancel()
+        settingsDeactivationWorkItem = nil
+        settingsActivationGeneration += 1
         NSApp.setActivationPolicy(.regular)
         setupMainMenu()
 
@@ -570,7 +586,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let hostingController = NSHostingController(rootView: settingsView)
             let window = NSWindow(contentViewController: hostingController)
             window.title = Loc.string("settings.windowTitle")
-            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             window.setContentSize(NSSize(width: 920, height: 520))
             window.titlebarAppearsTransparent = true
             window.isOpaque = false
@@ -578,6 +594,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // Keep window movement on the native title bar. Treating the whole
             // background as draggable steals the wheel preview's reorder gesture.
             window.isMovableByWindowBackground = false
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+            window.standardWindowButton(.zoomButton)?.isHidden = false
             window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
             window.standardWindowButton(.zoomButton)?.isEnabled = false
             window.center()
@@ -590,6 +608,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Cmd+W 直接用事件监听，不依赖菜单栏
         if settingsKeyMonitor == nil {
             settingsKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                if KeyActionService.isRecording { return event }
                 if event.modifierFlags.contains(.command),
                    event.charactersIgnoringModifiers == "w" {
                     self?.settingsWindow?.performClose(nil)
@@ -600,15 +619,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         guard let w = settingsWindow else { return }
-        NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
+        activateSettingsWindow(w, generation: settingsActivationGeneration)
+    }
 
-        // 补救：如果首次激活太早（setActivationPolicy 异步），100ms 后再试一次
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if !NSApp.isActive || !w.isKeyWindow {
-                NSApp.activate(ignoringOtherApps: true)
-                w.makeKeyAndOrderFront(nil)
+    @objc private func settingsInputFocusRequested(_ notification: Notification) {
+        guard let window = settingsWindow, let inputWindow = notification.object as? NSWindow,
+              inputWindow === window || inputWindow.sheetParent === window else { return }
+        activateSettingsWindow(window, generation: settingsActivationGeneration)
+    }
+
+    private func activateSettingsWindow(_ window: NSWindow, generation: Int, attempt: Int = 0) {
+        guard settingsWindow === window, window.isVisible,
+              generation == settingsActivationGeneration else { return }
+        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        NSApp.activate(ignoringOtherApps: true)
+        // An attached editor owns keyboard input; never reclaim it for its parent.
+        let inputWindow = window.attachedSheet ?? window
+        inputWindow.makeKey()
+
+        guard !NSApp.isActive || !inputWindow.isKeyWindow else { return }
+        // A policy transition can leave a visible settings window in an inactive
+        // app. Request activation through Launch Services after AppKit has had a
+        // run-loop turn to finish the transition; makeKey alone cannot activate it.
+        if attempt == 1, !NSApp.isActive {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            configuration.createsNewApplicationInstance = false
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { [weak self, weak window] _, error in
+                DispatchQueue.main.async {
+                    guard let self, let window, error == nil,
+                          self.settingsWindow === window, window.isVisible,
+                          self.settingsActivationGeneration == generation else { return }
+                    (window.attachedSheet ?? window).makeKeyAndOrderFront(nil)
+                }
             }
+        }
+        guard attempt < 8 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak window] in
+            guard let self, let window, window.isVisible else { return }
+            self.activateSettingsWindow(window, generation: generation, attempt: attempt + 1)
         }
     }
 
@@ -622,15 +672,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // 设置窗口关闭时隐藏 Dock + 清理监听
     func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
+        settingsActivationGeneration += 1
         if let m = settingsKeyMonitor {
             NSEvent.removeMonitor(m)
             settingsKeyMonitor = nil
         }
         settingsWindow = nil
         settingsHostingController = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        settingsDeactivationWorkItem?.cancel()
+        let generation = settingsActivationGeneration
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.settingsWindow == nil,
+                  self.settingsActivationGeneration == generation else { return }
             NSApp.setActivationPolicy(.accessory)
         }
+        settingsDeactivationWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     @objc func quitApp() {

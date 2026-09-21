@@ -67,6 +67,35 @@ assert "window.backgroundColor = .clear" in APP
 assert "window.isMovableByWindowBackground = false" in APP, (
     "only the native title bar may move the settings window so wheel item drags remain interactive"
 )
+assert "window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]" in APP, (
+    "settings root surface must extend behind the native title bar"
+)
+assert "window.standardWindowButton(.miniaturizeButton)?.isHidden = false" in APP
+assert "window.standardWindowButton(.zoomButton)?.isHidden = false" in APP
+assert "w.makeKeyAndOrderFront(nil)" in APP
+assert "activateSettingsWindow(w, generation: settingsActivationGeneration)" in APP
+assert "NSRunningApplication.current.activate" in APP
+assert "window.makeKeyAndOrderFront(nil)" not in APP, (
+    "settings may be ordered front only once; activation retries must not redisplay the window"
+)
+assert "SettingsRootGlassLayer()\n                .ignoresSafeArea()" in SETTINGS, (
+    "the single root glass must visually unite the title bar and settings content"
+)
+assert "override func viewDidMoveToWindow()" in SETTINGS
+assert "coordinator?.focusWhenAttached(field)" in SETTINGS, (
+    "the app picker search field must request focus after it is attached to its sheet window"
+)
+assert "editor.hasMarkedText()" in SETTINGS, (
+    "SwiftUI updates must not overwrite active CJK input-method composition"
+)
+assert "NSApplication.didBecomeActiveNotification" in SETTINGS
+assert "NSWindow.didBecomeKeyNotification" in SETTINGS
+search = SETTINGS.split("struct SearchField: NSViewRepresentable", 1)[1]
+assert "window.isVisible, window.isKeyWindow, NSApp.isActive" in search
+assert "window.makeFirstResponder(field)" in search
+assert "keyboardSelectionDidChangeNotification" not in search
+assert "window.makeKey()" not in search and "NSApp.activate" not in search
+assert "controlTextDidBeginEditing" in search and "finishInitialFocus()" in search
 assert ".frame(height: 22)" in SETTINGS, (
     "the explicit drag strip must stay narrow and clear of wheel item drag targets"
 )

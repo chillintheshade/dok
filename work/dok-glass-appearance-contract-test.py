@@ -42,7 +42,7 @@ def main() -> None:
 
     pie_requirements = [
         ("enum DokGlassMaterial", "single finalized glass parameter set"),
-        ("static let tintBase: Double = 0.03", "final native tint baseline"),
+        ("static let tintBase: Double = 0.03", "compatibility tint baseline"),
         ("static let tintRange: Double = 0.14", "final opacity-controlled tint range"),
         ("static let minimumMenuOpacity: Double = 0.15", "slider lower bound used by material mapping"),
         ("static func intensity(for menuOpacity: Double) -> Double", "shared opacity-to-material mapping"),
@@ -54,11 +54,14 @@ def main() -> None:
         ("CompatibilityGlassEffectView", "macOS 15 compatibility glass base"),
         ("NSVisualEffectView", "macOS 15 desktop-sampling compatibility view"),
         ("effectView.blendingMode = .behindWindow", "compatibility glass samples content behind the wheel"),
-        ("glass.style = .clear", "selected native clear style"),
-        ("glass.alphaValue = 1", "native glass remains fully composited instead of fading into a flat overlay"),
-        ("glass.tintColor =", "native glass density is adjusted through tint rather than whole-view alpha"),
+        ("glass.style = .clear", "macOS 26 clear style"),
+        ("glass.alphaValue = 1", "system glass remains fully composited"),
+        ("if #available(macOS 27.0, *) { return 1 }", "legacy opacity does not dim system glass decorations"),
+        ("glass.alphaValue = DokGlassMaterial.minimumMenuOpacity", "opacity slider adjusts only the untinted native glass sampler"),
+        ("+ (1 - DokGlassMaterial.minimumMenuOpacity) * clampedIntensity", "native sampler restores the slider opacity from normalized intensity"),
+        ("glass.tintColor = nil", "native clear glass has no additional color tint"),
         ("NSColor.black.withAlphaComponent", "neutral dark tint keeps wallpaper color without the milky light-mode fill"),
-        ("glass.layer?.masksToBounds = true", "native glass base clips its own rounded/circular edge"),
+        ("glass.layer?.masksToBounds = false", "native glass edge must not receive a second clipping mask"),
         ("appState.settings.menuOpacity", "radial menu reads saved opacity"),
         ("nativeGlassSamplingLayer", "runtime wheel renders a native sampling base"),
         ("private var animatedWheelLayers", "animated content is separated from the native sampling base"),
@@ -74,6 +77,7 @@ def main() -> None:
         require(pie_view, needle, reason)
 
     settings_requirements = [
+        ('Loc.string("settings.glass.followsSystem")', "system glass status replaces local slider on macOS 27"),
         ('title: Loc.string("settings.opacity")', "opacity slider label"),
         ("value: $appState.settings.menuOpacity", "opacity slider binding"),
         ("range: 0.15...1.0", "opacity slider range with visible low end"),
@@ -94,6 +98,7 @@ def main() -> None:
     forbid(settings_view, "refractionStrength", "hidden adjustable refraction strength setting")
     forbid(app_state, "refractionStrength", "persisted adjustable refraction strength setting")
     forbid(pie_view, "refractionStrength", "runtime adjustable refraction strength setting")
+    require(pie_view, "glass.style = .regular", "macOS 27 wheel uses the system-adaptive regular material")
     forbid(pie_view, "glass.contentView =", "native glass must remain a sampling base, not host the wheel content")
     forbid(pie_view, ".clipShape(Circle())", "SwiftUI clipping that can crop the native glass edge")
     forbid(pie_view, "DokNativeGlassExperiment", "finished native style experiment selector")

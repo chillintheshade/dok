@@ -9,6 +9,7 @@ extension Notification.Name {
     static let menuBarIconChanged = Notification.Name("dok.menuBarIconChanged")
     static let mouseTriggerChanged = Notification.Name("dok.mouseTriggerChanged")
     static let hotkeyRecordingCancelled = Notification.Name("dok.hotkeyRecordingCancelled")
+    static let settingsInputFocusRequested = Notification.Name("dok.settingsInputFocusRequested")
 }
 
 // MARK: - Data Models
@@ -17,6 +18,18 @@ enum WheelItemType: String, Codable {
     case app = "app"
     case fileOrFolder = "fileOrFolder"
     case webLink = "webLink"
+    case keyAction = "keyAction"
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        // Previously saved Shortcuts slots remain editable, with no keys assigned.
+        if value == "shortcut" { self = .keyAction; return }
+        guard let type = Self(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown item type")
+        }
+        self = type
+    }
 }
 
 struct AppItem: Identifiable, Codable, Equatable {
@@ -27,6 +40,7 @@ struct AppItem: Identifiable, Codable, Equatable {
     var itemType: WheelItemType = .app
     var bookmarkData: Data?
     var customIconData: Data?
+    var keyCombination: HotkeyConfig?
 
     /// 缓存版本 — 视图中使用这两个
     var displayName: String { IconCache.shared.displayName(for: self) }
@@ -84,6 +98,7 @@ struct AppItem: Identifiable, Codable, Equatable {
 
     /// 实际加载逻辑（仅由 IconCache 调用一次）
     func resolveDisplayName() -> String {
+        if itemType == .keyAction { return name }
         if itemType == .webLink {
             return name.isEmpty ? (webURL?.host ?? path) : name
         }
@@ -116,7 +131,13 @@ struct AppItem: Identifiable, Codable, Equatable {
     }
 
     func loadIcon() -> NSImage {
+        if itemType == .keyAction {
+            return NSImage(systemSymbolName: "keyboard", accessibilityDescription: name) ?? NSImage()
+        }
         if itemType == .webLink {
+            if let customIconData, let image = NSImage(data: customIconData) {
+                return image
+            }
             return NSWorkspace.shared.icon(for: .url)
         }
         if itemType == .fileOrFolder {
@@ -234,6 +255,16 @@ struct AppItem: Identifiable, Codable, Equatable {
             return
         }
         NSWorkspace.shared.open(webURL)
+    }
+
+    func runKeyAction(ready: @escaping () -> Bool = { true }) {
+        guard itemType == .keyAction else { return }
+        guard let combo = keyCombination else {
+            KeyActionService.showError("keyAction.unconfigured")
+            return
+        }
+        KeyActionService.run(keyCode: combo.keyCode, modifiers: combo.modifiers,
+                             bundleIdentifier: bundleIdentifier, ready: ready)
     }
 
     var isRunning: Bool {
@@ -412,7 +443,7 @@ enum AppearanceMode: String, Codable, CaseIterable {
     case dark = "dark"
 }
 
-struct HotkeyConfig: Codable {
+struct HotkeyConfig: Codable, Equatable {
     var keyCode: UInt16 = 53 // Escape
     var modifiers: NSEvent.ModifierFlags = [.command]
 
@@ -559,7 +590,9 @@ final class IconCache {
         case .fileOrFolder:
             return "file:\(app.path)"
         case .webLink:
-            return "url:\(app.path)"
+            return "url:\(app.id):\(app.path)"
+        case .keyAction:
+            return "keyAction:\(app.id)"
         }
     }
 
@@ -572,6 +605,8 @@ final class IconCache {
     }
 
     func displayName(for app: AppItem) -> String {
+        // Two shortcuts to the same URL can intentionally have different names.
+        if app.itemType == .webLink || app.itemType == .keyAction { return app.resolveDisplayName() }
         let key = cacheKey(for: app)
         if let name = nameCache[key] { return name }
         let name = app.resolveDisplayName()
@@ -591,8 +626,15 @@ class AppState: ObservableObject {
     static let maxSlots = 12
 
     @Published var settings: AppSettings {
-        didSet { saveSettings() }
+        didSet {
+            saveSettings()
+            if oldValue.showMusicControl != settings.showMusicControl {
+                nowPlaying.setObservationEnabled(settings.showMusicControl)
+            }
+        }
     }
+    enum CenterControlHover { case settings, previous, playback, next, progress }
+    @Published var centerControlHover: CenterControlHover?
     @Published var selectedIndex: Int? = nil
     @Published var selectedRecentAppIndex: Int? = nil
     @Published private(set) var recentAppSnapshot: [AppItem] = []
@@ -601,6 +643,7 @@ class AppState: ObservableObject {
     let nowPlaying = NowPlayingService()
     private var workspaceActivationObserver: NSObjectProtocol?
     private var recentActivatedBundleIdentifiers: [String] = []
+    private var websiteIconTasks: [UUID: Task<Void, Never>] = [:]
 
     private let settingsURL: URL = {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -652,9 +695,18 @@ class AppState: ObservableObject {
         ) { [weak self] notification in
             self?.recordActivatedApplication(from: notification)
         }
+
+        // Upgrade existing website shortcuts without blocking app launch.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for item in self.settings.apps where item.itemType == .webLink && item.customIconData == nil {
+                self.refreshWebsiteIcon(for: item)
+            }
+        }
     }
 
     deinit {
+        for task in websiteIconTasks.values { task.cancel() }
         if let workspaceActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
         }
@@ -663,6 +715,22 @@ class AppState: ObservableObject {
     func saveSettings() {
         if let data = try? JSONEncoder().encode(settings) {
             try? data.write(to: settingsURL)
+        }
+    }
+
+    func refreshWebsiteIcon(for item: AppItem) {
+        guard let url = item.webURL else { return }
+        websiteIconTasks[item.id]?.cancel()
+        websiteIconTasks[item.id] = Task { @MainActor [weak self] in
+            let data = await WebsiteIconLoader.fetch(for: url)
+            guard !Task.isCancelled, let self else { return }
+            self.websiteIconTasks[item.id] = nil
+            guard let data,
+                  let index = self.settings.apps.firstIndex(where: {
+                      $0.id == item.id && $0.itemType == .webLink && $0.path == item.path
+                  }) else { return }
+            IconCache.shared.invalidate()
+            self.settings.apps[index].customIconData = data
         }
     }
 
@@ -759,7 +827,7 @@ class AppState: ObservableObject {
             case .fileOrFolder:
                 guard item.isFolder else { return false }
                 key = "folder:\(item.resolvedFileURL().standardizedFileURL.path)"
-            case .webLink:
+            case .webLink, .keyAction:
                 return false
             }
             guard !seen.contains(key) else { return false }
