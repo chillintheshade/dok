@@ -83,7 +83,7 @@ def main() -> None:
     assert 'RecentAppSatelliteGeometry.offsets(' in SETTINGS
     assert 'private func recentPreviewSatellite' in SETTINGS
     assert '.allowsHitTesting(false)' in SETTINGS
-    assert 'ForEach(1...4, id: \.self)' in SETTINGS
+    assert 'options: (1...4).map { ($0, String($0)) }' in SETTINGS
     assert '.disabled(!appState.settings.showRecentApps)' in SETTINGS
     assert 'Loc.string("settings.recentApps")' in SETTINGS
     assert '"settings.recentApps" = "Recent Content";' in EN

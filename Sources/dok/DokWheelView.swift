@@ -505,8 +505,21 @@ struct DokWheelView: View {
                 innerRadius: centerLensRadius + 3,
                 outerRadius: outerRadius - 3
             )
-            .fill(Color.primary.opacity(0.055))
+            .fill(
+                RadialGradient(
+                    stops: [
+                        .init(color: .primary.opacity(0), location: 0),
+                        .init(color: .primary.opacity(0.032), location: 0.35),
+                        .init(color: .primary.opacity(0.032), location: 0.65),
+                        .init(color: .primary.opacity(0), location: 1)
+                    ],
+                    center: .center,
+                    startRadius: centerLensRadius,
+                    endRadius: outerRadius
+                )
+            )
             .frame(width: outerRadius * 2, height: outerRadius * 2)
+            .blur(radius: 6)
             .allowsHitTesting(false)
             .transition(.opacity)
         }

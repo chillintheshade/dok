@@ -27,6 +27,148 @@ private enum SettingsDesign {
     static let standardMotion = Animation.easeInOut(duration: 0.16)
 }
 
+// One shared selection layer moves between segments instead of replacing fills.
+private struct SmoothSegmentedControl<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(Value, String)]
+    let label: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.0) { value, title in
+                Button {
+                    selection = value
+                } label: {
+                    Text(title)
+                        .font(.system(size: 12, weight: selection == value ? .semibold : .regular))
+                        .foregroundStyle(selection == value
+                            ? (colorScheme == .dark ? Color.black : Color.white)
+                            : Color.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 20)
+                        .contentShape(Rectangle())
+
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityAddTraits(selection == value ? .isSelected : [])
+            }
+        }
+        .background {
+            GeometryReader { geometry in
+                let width = geometry.size.width / CGFloat(max(1, options.count))
+                let index = options.firstIndex { $0.0 == selection } ?? 0
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.primary)
+                    .frame(width: width)
+                    .offset(x: CGFloat(index) * width)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: index)
+            }
+            .allowsHitTesting(false)
+        }
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct SmoothSettingsSwitch: ToggleStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            Capsule()
+                .fill(configuration.isOn ? Color.primary : Color.primary.opacity(0.18))
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(.white)
+                        .padding(2)
+                        .frame(width: 28)
+                        .offset(x: configuration.isOn ? 16 : 0)
+                }
+                .frame(width: 44, height: 22)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: configuration.isOn)
+        .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+                .toggleStyle(.switch)
+        }
+    }
+}
+
+private struct SmoothSettingsSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let label: String
+    @State private var dragging = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var fraction: CGFloat {
+        CGFloat(min(1, max(0, (value - range.lowerBound) / (range.upperBound - range.lowerBound))))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let travel = max(1, geometry.size.width - 10)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.12)).frame(height: 4)
+                Capsule().fill(Color.primary).frame(width: 5 + travel * fraction, height: 4)
+                Capsule()
+                    .fill(.white)
+                    .frame(width: 10, height: 18)
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+                    .offset(x: travel * fraction)
+            }
+            .frame(height: 20)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { gesture in
+                    let target = range.lowerBound + Double(min(1, max(0, (gesture.location.x - 5) / travel))) * (range.upperBound - range.lowerBound)
+                    if !dragging {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { value = target }
+                        dragging = true
+                    } else {
+                        value = target
+                    }
+                }
+                .onEnded { _ in
+                    dragging = false
+                    let snapped = range.lowerBound + ((value - range.lowerBound) / step).rounded() * step
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                        value = min(range.upperBound, max(range.lowerBound, snapped))
+                    }
+                })
+        }
+        .frame(height: 20)
+        .focusable(true)
+        .onMoveCommand { direction in
+            let delta: Double
+            switch direction {
+            case .left, .down: delta = -step
+            case .right, .up: delta = step
+            default: return
+            }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
+                value = min(range.upperBound, max(range.lowerBound, value + delta))
+            }
+        }
+        .accessibilityRepresentation {
+            Slider(value: $value, in: range, step: step) { Text(label) }
+        }
+    }
+}
+
 private extension View {
     @ViewBuilder
     func settingsNavigationFocusEffect() -> some View {
@@ -113,6 +255,7 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab
     @State private var hoveredTab: SettingsTab?
     @FocusState private var focusedTab: SettingsTab?
+    @Namespace private var sidebarSelection
     let onSelectTab: (SettingsTab) -> Void
 
     init(selectedTab: SettingsTab, onSelectTab: @escaping (SettingsTab) -> Void = { _ in }) {
@@ -165,13 +308,24 @@ struct SettingsView: View {
                     .frame(height: SettingsDesign.navigationRowHeight)
                     .contentShape(Rectangle())
                     .background {
-                        if selectedTab == tab || hoveredTab == tab || focusedTab == tab {
+                        ZStack {
                             RoundedRectangle(
                                 cornerRadius: SettingsDesign.navigationRadius,
                                 style: .continuous
                             )
-                            .fill(selectedTab == tab ? SettingsDesign.selectedSurface : SettingsDesign.hoverSurface)
+                            .fill(SettingsDesign.hoverSurface)
+                            .opacity(selectedTab != tab && (hoveredTab == tab || focusedTab == tab) ? 1 : 0)
+
+                            if selectedTab == tab {
+                                RoundedRectangle(
+                                    cornerRadius: SettingsDesign.navigationRadius,
+                                    style: .continuous
+                                )
+                                .fill(SettingsDesign.selectedSurface)
+                                .matchedGeometryEffect(id: "sidebarSelection", in: sidebarSelection)
+                            }
                         }
+                        .allowsHitTesting(false)
                     }
                 }
                 .buttonStyle(.plain)
@@ -183,6 +337,7 @@ struct SettingsView: View {
                     else if hoveredTab == tab { hoveredTab = nil }
                 }
                 .animation(reduceMotion ? nil : SettingsDesign.quickMotion, value: hoveredTab == tab)
+                .animation(reduceMotion ? nil : SettingsDesign.quickMotion, value: focusedTab == tab)
                 .onMoveCommand { direction in
                     guard focusedTab == tab,
                           let index = SettingsTab.allCases.firstIndex(of: tab) else { return }
@@ -484,19 +639,17 @@ struct AppsSettingsView: View {
                 Text(Loc.string("settings.recentApps"))
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Toggle("", isOn: $appState.settings.showRecentApps)
+                Toggle(Loc.string("settings.recentApps"), isOn: $appState.settings.showRecentApps)
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .toggleStyle(SmoothSettingsSwitch())
                     .controlSize(.small)
             }
 
-            Picker("", selection: $appState.settings.recentAppCount) {
-                ForEach(1...4, id: \.self) { count in
-                    Text("\(count)").tag(count)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+            SmoothSegmentedControl(
+                selection: $appState.settings.recentAppCount,
+                options: (1...4).map { ($0, String($0)) },
+                label: Loc.string("settings.recentApps")
+            )
             .disabled(!appState.settings.showRecentApps)
         }
         .padding(12)
@@ -1479,12 +1632,11 @@ struct GeneralSettingsView: View {
             SettingDivider()
 
             SettingRow(title: Loc.string("settings.mode")) {
-                Picker("", selection: $appState.settings.interactionMode) {
-                    Text(Loc.string("mode.click")).tag(InteractionMode.click)
-                    Text(Loc.string("mode.hold")).tag(InteractionMode.hold)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                SmoothSegmentedControl(
+                    selection: $appState.settings.interactionMode,
+                    options: [(InteractionMode.click, Loc.string("mode.click")), (.hold, Loc.string("mode.hold"))],
+                    label: Loc.string("settings.mode")
+                )
             }
         }
     }
@@ -1510,24 +1662,21 @@ struct GeneralSettingsView: View {
     private var wheelGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.wheel")) {
             SettingRow(title: Loc.string("settings.position")) {
-                Picker("", selection: $appState.settings.menuPosition) {
-                    Text(Loc.string("position.mouse")).tag(MenuPosition.followMouse)
-                    Text(Loc.string("position.center")).tag(MenuPosition.screenCenter)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                SmoothSegmentedControl(
+                    selection: $appState.settings.menuPosition,
+                    options: [(MenuPosition.followMouse, Loc.string("position.mouse")), (.screenCenter, Loc.string("position.center"))],
+                    label: Loc.string("settings.position")
+                )
             }
 
             SettingDivider()
 
             SettingRow(title: Loc.string("settings.theme")) {
-                Picker("", selection: $appState.settings.appearanceMode) {
-                    Text(Loc.string("theme.system")).tag(AppearanceMode.system)
-                    Text(Loc.string("theme.light")).tag(AppearanceMode.light)
-                    Text(Loc.string("theme.dark")).tag(AppearanceMode.dark)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                SmoothSegmentedControl(
+                    selection: $appState.settings.appearanceMode,
+                    options: [(AppearanceMode.system, Loc.string("theme.system")), (.light, Loc.string("theme.light")), (.dark, Loc.string("theme.dark"))],
+                    label: Loc.string("settings.theme")
+                )
                 .onChange(of: appState.settings.appearanceMode) { _ in
                     NotificationCenter.default.post(name: .appearanceChanged, object: nil)
                 }
@@ -1634,7 +1783,7 @@ struct GeneralSettingsView: View {
                         .font(.system(size: 11.5, weight: .regular, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: value, in: range, step: step)
+                SmoothSettingsSlider(value: value, range: range, step: step, label: title)
             }
         }
     }

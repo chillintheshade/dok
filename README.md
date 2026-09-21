@@ -32,13 +32,13 @@ dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Ap
 
 [View the changelog / 查看更新说明](CHANGELOG.md) — keyboard-action slots, website icons, undo, native-glass refinements, and Chinese search-input fixes / 按键动作槽位、网站图标、撤销、原生玻璃优化及中文搜索输入修正。
 
-## Latest Update: 1.4.0 / 最新更新：1.4.0
+## Latest Update: 1.4.1 / 最新更新：1.4.1
 
-- Recorded keyboard actions, website icons and custom names, and removal undo / 新增组合键动作、网站图标与自定义名称、删除撤销
-- Chinese input and focus fixes, native glass and music interaction refinements / 修复中文输入与焦点问题，改善原生玻璃和音乐交互
-- Universal 2 for macOS 13+, Apple Silicon and Intel; Developer ID-signed, not Apple-notarized / 支持 macOS 13+、Apple Silicon 和 Intel；已使用 Developer ID 签名，未进行 Apple 公证
+- Softer wheel selection and animated settings controls / 柔化轮盘选中提示，为设置控件增加过渡
+- Builds and regression checks passed; visual animation verification remains pending / 构建与回归检查通过，动画实际效果仍待视觉验证
+- Developer ID-signed, not Apple-notarized / 已使用 Developer ID 签名，未进行 Apple 公证
 
-[Release notes and download / 更新说明与下载 dok 1.4.0](https://github.com/chillintheshade/dok/releases/tag/v1.4.0)
+[Release notes and download / 更新说明与下载 dok 1.4.1](https://github.com/chillintheshade/dok/releases/tag/v1.4.1)
 
 ## Preview / 预览
 
@@ -79,9 +79,9 @@ Download the latest DMG from [GitHub Releases](https://github.com/chillintheshad
 
 从 [GitHub Releases](https://github.com/chillintheshade/dok/releases/latest) 下载最新 DMG，然后把 `dok.app` 拖到 `/Applications`。
 
-Version 1.4.0 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
+Version 1.4.1 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
 
-1.4.0 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
+1.4.1 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
 
 ## Build From Source / 从源码构建
 

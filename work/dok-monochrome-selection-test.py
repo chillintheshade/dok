@@ -6,7 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WHEEL = (ROOT / "Sources/dok/DokWheelView.swift").read_text()
 SETTINGS = (ROOT / "Sources/dok/SettingsView.swift").read_text()
 
-assert ".fill(Color.primary.opacity(0.055))" in WHEEL, (
+wedge = WHEEL.split("private var selectedWedgeLayer: some View {", 1)[1].split("// MARK: - Icons", 1)[0]
+assert ".primary.opacity(" in wedge and "accentColor" not in wedge, (
     "the live wheel selection wedge must use the monochrome semantic cursor"
 )
 assert ".fill(Color.accentColor.opacity(0.12))" not in WHEEL
