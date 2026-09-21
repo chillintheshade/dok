@@ -38,9 +38,9 @@ def main() -> None:
     for needle in [
         "name: dok",
         "  dok:",
-        "PRODUCT_NAME: dok",
-        "INFOPLIST_KEY_CFBundleName: dok",
-        "INFOPLIST_KEY_CFBundleDisplayName: dok",
+        "PRODUCT_NAME: Dok",
+        "INFOPLIST_KEY_CFBundleName: Dok",
+        "INFOPLIST_KEY_CFBundleDisplayName: Dok",
         "PRODUCT_BUNDLE_IDENTIFIER: com.qingshan.orbis",
         "path: Sources/dok",
         "CODE_SIGN_ENTITLEMENTS: dok.entitlements",
@@ -49,7 +49,7 @@ def main() -> None:
 
     require(package, 'name: "dok"', "Swift package name")
     require(package, 'path: "Sources/dok"', "Swift package source path")
-    require(pbxproj, "PRODUCT_NAME = dok;", "generated Xcode product name")
+    require(pbxproj, "PRODUCT_NAME = Dok;", "generated Xcode product name")
     require(pbxproj, "PRODUCT_BUNDLE_IDENTIFIER = com.qingshan.orbis;", "stable bundle identifier")
 
     expected_sources = {
@@ -71,15 +71,15 @@ def main() -> None:
         "for index in 0..<8",
         "NSImage(size: imageSize, flipped: false)",
         "image.isTemplate = true",
-        'image.accessibilityDescription = "dok"',
+        'image.accessibilityDescription = "Dok"',
     ]:
         require(app, needle, "menu bar brand icon contract")
     forbid(app, 'systemSymbolName: "circle.grid.cross"', "legacy SF Symbol menu bar icon")
-    require(app, 'button.toolTip = "dok"', "menu bar tooltip")
-    require(readme, "# dok", "README title")
+    require(app, 'button.toolTip = "Dok"', "menu bar tooltip")
+    require(readme, "# Dok", "README title")
     require(readme, "github.com/chillintheshade/dok", "README repository URL")
-    require(public_docs, "Show dok", "English user-facing name")
-    require(public_docs, "dok 设置", "Chinese user-facing name")
+    require(public_docs, "Show Dok", "English user-facing name")
+    require(public_docs, "Dok 设置", "Chinese user-facing name")
 
     assert not (ROOT / "Sources" / "Arcly").exists(), "old source directory remains"
     assert not (ROOT / "Arcly.xcodeproj").exists(), "old Xcode project remains"

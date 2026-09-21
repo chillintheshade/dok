@@ -1,8 +1,8 @@
-# dok Project Guide
+# Dok Project Guide
 
 ## Product
 
-dok is a free macOS 13+ radial launcher for apps, files, folders, websites, and system Now Playing controls. The user-facing name is always lowercase `dok`; keep `com.qingshan.orbis` for update compatibility. macOS 26 uses native Liquid Glass; macOS 13–15 use the compatibility material.
+Dok is a free macOS 13+ radial launcher for apps, files, folders, websites, and system Now Playing controls. The user-facing name is `Dok`; keep `com.qingshan.orbis` for update compatibility. macOS 26 uses native Liquid Glass; macOS 13–15 use the compatibility material.
 
 ## Run And Verify
 
@@ -12,7 +12,7 @@ for test in work/*-test.py; do python3 "$test" || exit 1; done
 xcodebuild -project dok.xcodeproj -scheme dok -configuration Release build CODE_SIGNING_ALLOWED=NO
 ```
 
-The installed development copy is `/Applications/dok.app`. Build successfully before replacing it, then ad-hoc sign and verify the local copy.
+The installed development copy is `/Applications/Dok.app`. Build successfully before replacing it, then ad-hoc sign and verify the local copy.
 
 ## Stack And Structure
 
@@ -50,14 +50,14 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 
 ## Current State (2026-09-21)
 
-- Source version is 1.4.1 (build 10), Developer ID-signed release without Apple notarization; one Universal 2 build supports macOS 13+, Apple Silicon, and Intel. macOS 26 retains the approved native Liquid Glass branch; macOS 13–15 use the isolated compatibility material.
+- Source version is 1.4.2 (build 11), Developer ID-signed release without Apple notarization; one Universal 2 build supports macOS 13+, Apple Silicon, and Intel. macOS 26 retains the approved native Liquid Glass branch; macOS 13–15 use the isolated compatibility material.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
 - Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - On macOS 27+, wheel and satellites use user-selected untinted native `.regular` glass at full alpha with no local opacity override (system preference response confirmed in an offscreen comparison; live slider verification remains pending); settings display “Follows System” instead of a local opacity slider. macOS 26 retains untinted `.clear` with local opacity adjustment; macOS 13–15 retain compatibility material. Preserve native edges without a second bounds mask, plus the existing `0.55pt` white supplement.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
 - Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-content satellites (default 2) sit outside the wheel at 6 o'clock and include apps plus folders opened through dok, while files and websites stay fixed-slot only; Dock notification badges render on app slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
-- GitHub v1.4.1 distributes `dok-1.4.1.dmg`, Developer ID-signed but not Apple-notarized by user decision. `dist/dok-1.3.0.dmg` is the historical notarized package.
+- GitHub v1.4.2 distributes `Dok-1.4.2.dmg`, Developer ID-signed but not Apple-notarized by user decision. `dist/dok-1.3.0.dmg` is the historical notarized package.
 
 ## Next Release
 

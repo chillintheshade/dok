@@ -372,7 +372,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "dok"
+        image.accessibilityDescription = "Dok"
         return image
     }
 
@@ -381,7 +381,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let button = statusItem.button {
             button.image = statusBarBrandImage()
             button.imagePosition = .imageOnly
-            button.toolTip = "dok"
+            button.toolTip = "Dok"
             NSLog("✅ 状态栏图标已创建")
         } else {
             NSLog("❌ 状态栏按钮创建失败")

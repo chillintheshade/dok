@@ -5,14 +5,14 @@ ROOT = Path(__file__).resolve().parents[1]
 required_localizations = {
     "Resources/en.lproj/Localizable.strings": [
         '"settings.tab.wheel" = "Wheel";',
-        '"menu.show" = "Show dok";',
-        '"onboarding.title" = "Welcome to dok";',
+        '"menu.show" = "Show Dok";',
+        '"onboarding.title" = "Welcome to Dok";',
         '"music.placeholder" = "Music";',
     ],
     "Resources/zh-Hans.lproj/Localizable.strings": [
         '"settings.tab.wheel" = "轮盘";',
-        '"menu.show" = "显示 dok";',
-        '"onboarding.title" = "欢迎使用 dok！";',
+        '"menu.show" = "显示 Dok";',
+        '"onboarding.title" = "欢迎使用 Dok！";',
         '"music.placeholder" = "音乐";',
     ],
 }

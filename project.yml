@@ -9,9 +9,9 @@ settings:
   base:
     SWIFT_VERSION: "5"
     MACOSX_DEPLOYMENT_TARGET: "13.0"
-    PRODUCT_NAME: dok
-    MARKETING_VERSION: "1.3.0"
-    CURRENT_PROJECT_VERSION: "8"
+    PRODUCT_NAME: Dok
+    MARKETING_VERSION: "1.4.2"
+    CURRENT_PROJECT_VERSION: "11"
     ARCHS:
       - arm64
       - x86_64
@@ -73,12 +73,12 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.qingshan.orbis
         INFOPLIST_FILE: ""
         GENERATE_INFOPLIST_FILE: true
-        INFOPLIST_KEY_CFBundleName: dok
-        INFOPLIST_KEY_CFBundleDisplayName: dok
+        INFOPLIST_KEY_CFBundleName: Dok
+        INFOPLIST_KEY_CFBundleDisplayName: Dok
         INFOPLIST_KEY_LSUIElement: true
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
         INFOPLIST_KEY_CFBundleIconName: AppIcon
-        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2025 dok. All rights reserved."
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2025 Dok. All rights reserved."
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 9NDTK4FT92

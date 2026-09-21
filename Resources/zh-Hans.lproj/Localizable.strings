@@ -2,11 +2,11 @@
 "settings.tab.general" = "通用";
 "settings.tab.wheel.subtitle" = "排序与添加";
 "settings.tab.general.subtitle" = "快捷键与行为";
-"settings.windowTitle" = "dok 设置";
+"settings.windowTitle" = "Dok 设置";
 
-"menu.show" = "显示 dok";
+"menu.show" = "显示 Dok";
 "menu.settings" = "设置…";
-"menu.quit" = "退出 dok";
+"menu.quit" = "退出 Dok";
 "menu.file" = "文件";
 "menu.closeWindow" = "关闭窗口";
 "menu.edit" = "编辑";
@@ -17,7 +17,7 @@
 "menu.paste" = "粘贴";
 "menu.selectAll" = "全选";
 
-"onboarding.title" = "欢迎使用 dok！";
+"onboarding.title" = "欢迎使用 Dok！";
 "onboarding.body" = "快速上手：\n1. 按 %@ 唤出轮盘菜单\n2. 移动鼠标到目标应用，点击即可启动\n3. 右键或按 Esc 关闭菜单\n4. 点击菜单栏图标打开设置\n\n提示：需要授权「辅助功能」权限才能使用全局快捷键。";
 "onboarding.start" = "开始使用";
 "onboarding.openAccessibility" = "打开辅助功能设置";
@@ -27,7 +27,7 @@
 "openPanel.file.message" = "选择要添加到轮盘的文件";
 
 "link.title" = "添加网址";
-"link.message" = "输入网址，dok 会使用默认浏览器打开。";
+"link.message" = "输入网址，Dok 会使用默认浏览器打开。";
 "link.placeholder" = "example.com";
 "link.add" = "添加";
 "link.cancel" = "取消";
@@ -116,12 +116,12 @@
 "keyAction.combination" = "组合键";
 "keyAction.record" = "录入组合键";
 "keyAction.hint" = "点击录入后，按下含 ⌘、⌃ 或 ⌥ 的组合键；单按 Esc 取消。";
-"keyAction.conflict" = "不能与打开 dok 的快捷键相同。";
+"keyAction.conflict" = "不能与打开 Dok 的快捷键相同。";
 "keyAction.target" = "先切换到";
 "keyAction.currentApp" = "不切换应用（点击选择）";
 "keyAction.clearTarget" = "清除";
 "keyAction.targetHint" = "不指定时保持当前应用，直接发送组合键。微信截图等全局快捷键无需切换应用；微信需处于运行状态。";
-"keyAction.permission" = "录入和执行组合键需要为 dok 开启辅助功能权限。";
+"keyAction.permission" = "录入和执行组合键需要为 Dok 开启辅助功能权限。";
 "keyAction.openAccessibility" = "打开辅助功能设置";
 "keyAction.error" = "按键动作未执行";
 "keyAction.targetError" = "无法切换到目标应用，请打开该应用后重试。";
@@ -130,6 +130,6 @@
 "keyAction.unconfigured" = "请在轮盘设置中选中此槽位，先设置组合键。";
 "keyAction.recording" = "请按组合键…";
 "keyAction.needModifier" = "请同时按 ⌘、⌃ 或 ⌥";
-"keyAction.captureError" = "无法启动录入，请检查 dok 的辅助功能权限。";
+"keyAction.captureError" = "无法启动录入，请检查 Dok 的辅助功能权限。";
 
 "settings.glass.followsSystem" = "跟随系统";

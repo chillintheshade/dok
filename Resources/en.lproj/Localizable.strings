@@ -2,11 +2,11 @@
 "settings.tab.general" = "General";
 "settings.tab.wheel.subtitle" = "Arrange & Add";
 "settings.tab.general.subtitle" = "Shortcuts & Behavior";
-"settings.windowTitle" = "dok Settings";
+"settings.windowTitle" = "Dok Settings";
 
-"menu.show" = "Show dok";
+"menu.show" = "Show Dok";
 "menu.settings" = "Settings...";
-"menu.quit" = "Quit dok";
+"menu.quit" = "Quit Dok";
 "menu.file" = "File";
 "menu.closeWindow" = "Close Window";
 "menu.edit" = "Edit";
@@ -17,7 +17,7 @@
 "menu.paste" = "Paste";
 "menu.selectAll" = "Select All";
 
-"onboarding.title" = "Welcome to dok";
+"onboarding.title" = "Welcome to Dok";
 "onboarding.body" = "Quick start:\n1. Press %@ to open the wheel\n2. Move to an item and click to launch\n3. Right-click or press Esc to close\n4. Use the menu bar icon to open Settings\n\nTip: Accessibility permission is required for the global shortcut.";
 "onboarding.start" = "Get Started";
 "onboarding.openAccessibility" = "Open Accessibility Settings";
@@ -27,7 +27,7 @@
 "openPanel.file.message" = "Choose a file to add to the wheel";
 
 "link.title" = "Add Website";
-"link.message" = "Enter a website address. dok will open it in your default browser.";
+"link.message" = "Enter a website address. Dok will open it in your default browser.";
 "link.placeholder" = "example.com";
 "link.add" = "Add";
 "link.cancel" = "Cancel";
@@ -116,12 +116,12 @@
 "keyAction.combination" = "Key combination";
 "keyAction.record" = "Record combination";
 "keyAction.hint" = "Click to record, then press a combination containing ⌘, ⌃ or ⌥. Press Esc to cancel.";
-"keyAction.conflict" = "Choose a combination different from the dok activation shortcut.";
+"keyAction.conflict" = "Choose a combination different from the Dok activation shortcut.";
 "keyAction.target" = "Switch to";
 "keyAction.currentApp" = "No app switch (click to choose)";
 "keyAction.clearTarget" = "Clear";
 "keyAction.targetHint" = "Without a target, keep the current app and send the shortcut directly. Global shortcuts such as WeChat screenshots need no app switch; WeChat must be running.";
-"keyAction.permission" = "Enable Accessibility access for dok to record and execute combinations.";
+"keyAction.permission" = "Enable Accessibility access for Dok to record and execute combinations.";
 "keyAction.openAccessibility" = "Open Accessibility settings";
 "keyAction.error" = "Keyboard action could not run";
 "keyAction.targetError" = "Could not focus the target app. Open it and try again.";
@@ -130,6 +130,6 @@
 "keyAction.unconfigured" = "Select this slot in Wheel settings and choose a key combination first.";
 "keyAction.recording" = "Press a combination…";
 "keyAction.needModifier" = "Include ⌘, ⌃ or ⌥";
-"keyAction.captureError" = "Could not start recording. Check Accessibility access for dok.";
+"keyAction.captureError" = "Could not start recording. Check Accessibility access for Dok.";
 
 "settings.glass.followsSystem" = "Follows System";
