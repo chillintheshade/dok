@@ -1,10 +1,10 @@
 # 更新记录 / Changelog
 
-## 1.4.0 — 待公证 / Pending notarization
+## 1.4.0 — 2026-09-21
 
-1.4.0 安装包已生成并通过 Developer ID 签名校验，正在等待 Apple 公证。公开稳定版仍为 1.3.0。
+1.4.0 安装包已通过 Developer ID 签名校验，本次发布不进行 Apple 公证；macOS 可能拦截首次打开。
 
-The 1.4.0 installer is Developer ID-signed and awaiting Apple notarization. The public stable release remains 1.3.0.
+The 1.4.0 installer is Developer ID-signed and is not Apple-notarized. macOS may block the first launch.
 
 ### 新增
 

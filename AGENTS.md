@@ -48,16 +48,16 @@ A backend that exits within 5 seconds of launch is dropped from the queue; the n
 - Build, run all contract tests, install, sign, and visually inspect both settings tabs after UI changes.
 - Do not commit or push unless the user explicitly asks.
 
-## Current State (2026-08-20)
+## Current State (2026-09-21)
 
-- Source version is 1.4.0 (build 9), pending notarized release; one Universal 2 build supports macOS 13+, Apple Silicon, and Intel. macOS 26 retains the approved native Liquid Glass branch; macOS 13–15 use the isolated compatibility material.
+- Source version is 1.4.0 (build 9), Developer ID-signed release without Apple notarization; one Universal 2 build supports macOS 13+, Apple Silicon, and Intel. macOS 26 retains the approved native Liquid Glass branch; macOS 13–15 use the isolated compatibility material.
 - All features are free. The source contains no Pro tier, StoreKit manager, purchase flow, or paywall.
 - Licensed GPL-3.0; `Vendor/MediaRemoteAdapter` is BSD-3 and its notices must be retained.
 - The `/usr/bin/swift` shim is forbidden. The swift-toolchain helper may run only with a real CLT/Xcode Swift binary and is a fallback behind the perl adapter.
 - On macOS 27+, wheel and satellites use user-selected untinted native `.regular` glass at full alpha with no local opacity override (system preference response confirmed in an offscreen comparison; live slider verification remains pending); settings display “Follows System” instead of a local opacity slider. macOS 26 retains untinted `.clear` with local opacity adjustment; macOS 13–15 retain compatibility material. Preserve native edges without a second bounds mask, plus the existing `0.55pt` white supplement.
 - Music progress is a minimal played-arc ring at the center boundary (no track, no boundary circle, no head dot) with tap-to-seek via the perl adapter's one-shot `seek` command; helper drift under 1.5s converges at 8% per tick.
 - Wheel extras: right-clicking a running app slot shows a single localized Quit item; up to 4 recent-content satellites (default 2) sit outside the wheel at 6 o'clock and include apps plus folders opened through dok, while files and websites stay fixed-slot only; Dock notification badges render on app slots and satellites, snapshotted once per summon, silently absent without Accessibility permission.
-- `dist/dok-1.3.0.dmg` is the current Developer ID-signed and Apple-notarized Universal 2 self-distribution package.
+- GitHub v1.4.0 distributes `dok-1.4.0.dmg`, Developer ID-signed but not Apple-notarized by user decision. `dist/dok-1.3.0.dmg` is the historical notarized package.
 
 ## Next Release
 

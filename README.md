@@ -32,15 +32,13 @@ dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Ap
 
 [View the changelog / 查看更新说明](CHANGELOG.md) — keyboard-action slots, website icons, undo, native-glass refinements, and Chinese search-input fixes / 按键动作槽位、网站图标、撤销、原生玻璃优化及中文搜索输入修正。
 
-## Latest Update: 1.3.0 / 最新更新：1.3.0
+## Latest Update: 1.4.0 / 最新更新：1.4.0
 
-- One Universal 2 download now supports macOS 13+, Apple Silicon, and Intel Macs / 一个 Universal 2 安装包同时支持 macOS 13+、Apple Silicon 与 Intel Mac
-- macOS 26 keeps the approved native Liquid Glass; macOS 13–15 automatically use the compatibility material / macOS 26 保持已定稿的原生 Liquid Glass，macOS 13–15 自动切换兼容玻璃材质
-- Signed with Developer ID and notarized by Apple for normal installation / 使用 Developer ID 签名并通过 Apple 公证，可直接正常安装
+- Recorded keyboard actions, website icons and custom names, and removal undo / 新增组合键动作、网站图标与自定义名称、删除撤销
+- Chinese input and focus fixes, native glass and music interaction refinements / 修复中文输入与焦点问题，改善原生玻璃和音乐交互
+- Universal 2 for macOS 13+, Apple Silicon and Intel; Developer ID-signed, not Apple-notarized / 支持 macOS 13+、Apple Silicon 和 Intel；已使用 Developer ID 签名，未进行 Apple 公证
 
-[View the full release notes and download dok 1.3.0](https://github.com/chillintheshade/dok/releases/tag/v1.3.0)
-
-[查看完整更新说明并下载 dok 1.3.0](https://github.com/chillintheshade/dok/releases/tag/v1.3.0)
+[Release notes and download / 更新说明与下载 dok 1.4.0](https://github.com/chillintheshade/dok/releases/tag/v1.4.0)
 
 ## Preview / 预览
 
@@ -81,9 +79,9 @@ Download the latest DMG from [GitHub Releases](https://github.com/chillintheshad
 
 从 [GitHub Releases](https://github.com/chillintheshade/dok/releases/latest) 下载最新 DMG，然后把 `dok.app` 拖到 `/Applications`。
 
-The release is signed with a Developer ID certificate and notarized by Apple. macOS can verify it normally; no Terminal command is required.
+Version 1.4.0 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
 
-发布版本已使用 Developer ID 证书签名并通过 Apple 公证，macOS 可以正常验证，无需执行终端命令。
+1.4.0 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
 
 ## Build From Source / 从源码构建
 
