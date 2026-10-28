@@ -50,14 +50,15 @@ def main() -> None:
     assert 'return "99+"' in VIEW, "large numeric badges must clamp to 99+"
     assert "y: -iconSize * 0.36" in VIEW, "main badge must sit at top-right"
     assert "y: -baseDiameter * 0.31" in VIEW, "satellite badge must sit at top-right"
-    assert 'Image(systemName: "clock.fill")' in VIEW, "recent clock badge must remain"
+    assert 'Image(systemName: "clock.fill")' not in VIEW, "satellites no longer carry a clock badge"
+    assert 'clock.fill' not in (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text(), "nor in the settings preview"
 
     assert '$appState.settings.showNotificationBadges' in SETTINGS
     assert 'Loc.string("settings.notificationBadges")' in SETTINGS
     assert '"settings.notificationBadges" = "Notification Badges";' in EN
     assert '"settings.notificationBadges" = "通知角标";' in ZH
     assert "static let windowWidth: CGFloat = 920" in SETTINGS
-    assert "static let windowHeight: CGFloat = 520" in SETTINGS
+    assert "static let initialWindowHeight: CGFloat = 520" in SETTINGS
 
     print("Notification badge contract passed.")
 

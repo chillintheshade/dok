@@ -447,14 +447,17 @@ struct HotkeyConfig: Codable, Equatable {
     var keyCode: UInt16 = 53 // Escape
     var modifiers: NSEvent.ModifierFlags = [.command]
 
-    var displayString: String {
+    var displayString: String { keySymbols.joined() }
+
+    /// 一个键一个符号，用来画成一排键帽。
+    var keySymbols: [String] {
         var parts: [String] = []
         if modifiers.contains(.control) { parts.append("⌃") }
         if modifiers.contains(.option) { parts.append("⌥") }
         if modifiers.contains(.shift) { parts.append("⇧") }
         if modifiers.contains(.command) { parts.append("⌘") }
         parts.append(Self.keyCodeToString(keyCode))
-        return parts.joined()
+        return parts
     }
 
     /// 转换为 Carbon API 的修饰键
@@ -535,9 +538,13 @@ struct AppSettings: Codable {
     var showRecentApps: Bool = true
     var interactionMode: InteractionMode = .click
     var hotkey: HotkeyConfig = HotkeyConfig()
-    var menuRadius: Double = 140
-    var iconSize: Double = 48
-    var menuOpacity: Double = 1.0
+    static let defaultMenuRadius: Double = 110
+    static let defaultIconSize: Double = 48
+    static let defaultMenuOpacity: Double = 1.0
+
+    var menuRadius: Double = defaultMenuRadius
+    var iconSize: Double = defaultIconSize
+    var menuOpacity: Double = defaultMenuOpacity
     var menuPosition: MenuPosition = .followMouse
     var appearanceMode: AppearanceMode = .system
     var hapticFeedback: Bool = true
@@ -559,9 +566,9 @@ struct AppSettings: Codable {
         recentAppCount = min(max(decodedRecentAppCount == 0 ? 2 : decodedRecentAppCount, 1), 4)
         interactionMode = (try? c.decode(InteractionMode.self, forKey: .interactionMode)) ?? .click
         hotkey = (try? c.decode(HotkeyConfig.self, forKey: .hotkey)) ?? HotkeyConfig()
-        menuRadius = (try? c.decode(Double.self, forKey: .menuRadius)) ?? 140
-        iconSize = (try? c.decode(Double.self, forKey: .iconSize)) ?? 48
-        menuOpacity = (try? c.decode(Double.self, forKey: .menuOpacity)) ?? 1.0
+        menuRadius = (try? c.decode(Double.self, forKey: .menuRadius)) ?? Self.defaultMenuRadius
+        iconSize = (try? c.decode(Double.self, forKey: .iconSize)) ?? Self.defaultIconSize
+        menuOpacity = (try? c.decode(Double.self, forKey: .menuOpacity)) ?? Self.defaultMenuOpacity
         menuPosition = (try? c.decode(MenuPosition.self, forKey: .menuPosition)) ?? .followMouse
         appearanceMode = (try? c.decode(AppearanceMode.self, forKey: .appearanceMode)) ?? .system
         hapticFeedback = (try? c.decode(Bool.self, forKey: .hapticFeedback)) ?? true

@@ -43,7 +43,7 @@ def main() -> None:
     )
 
     assert "@Published private(set) var canSeek" in SERVICE
-    assert "activeBackend == .perlAdapter" in SERVICE
+    assert "guard adapterUsable,\n              canSeek," in SERVICE
     assert "func seek(to seconds: TimeInterval)" in SERVICE
     assert '[script.path, framework.path, "seek", String(microseconds)]' in SERVICE
     assert "target * 1_000_000" in SERVICE

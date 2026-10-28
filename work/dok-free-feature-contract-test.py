@@ -26,8 +26,8 @@ app_state = (SOURCES / "AppState.swift").read_text()
 assert "static let maxSlots = 12" in app_state, "all users should receive 12 wheel slots"
 
 settings = (SOURCES / "SettingsView.swift").read_text()
-assert "appState.settings.apps.count >= AppState.maxSlots" in settings
-assert "guard appState.settings.apps.count < AppState.maxSlots" in settings
+assert "private let maxSlots = AppState.maxSlots" in settings
+assert "private var isFull: Bool { appState.settings.apps.count >= maxSlots }" in settings
 
 pbxproj = (ROOT / "dok.xcodeproj" / "project.pbxproj").read_text()
 assert "ProManager.swift" not in pbxproj

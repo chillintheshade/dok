@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ApplicationServices
 import IOKit.hidsystem
 
 // MARK: - Now Playing Service
@@ -7,15 +8,37 @@ import IOKit.hidsystem
 /// 读取系统「正在播放」信息。
 ///
 /// macOS 只向 Apple 签名的进程开放 MediaRemote 元数据，因此本机进程内直读通常拿不到数据。
-/// 兜底方案是把一段脚本交给 Swift 工具链（Apple 签名）执行，借它的身份读取。
+/// 主路径是借系统 perl（Apple 签名）运行打包的 MediaRemoteAdapter，**按需**运行：
+/// 唤出轮盘时先显示缓存，同时启动 `stream`（首帧实测约 20ms），系统一宣布变化就推送，
+/// 与播放器切歌同步；轮盘收起即结束。没有常驻进程，也就没有"进程活着却不再推数据"
+/// 的失效方式。启动和系统唤醒时各用一次性 `get` 预热缓存。
 ///
-/// 该 helper 是**常驻**的：启动一次后注册 MediaRemote 通知并低成本轮询，
-/// 有变化就往 stdout 推一行 JSON。这样切歌是事件驱动的即时更新，
-/// 而不是每次刷新都重新启动解释器（那样每次要付 1～3 秒的编译开销）。
+/// 只有 perl 路不可用时，才退回常驻的 Swift 工具链 helper（解释器启动要 1～3 秒，
+/// 无法按需），并为它提供自愈：快速失败退避重试、唤醒后重启、唤出时无数据则重启。
 class NowPlayingService: ObservableObject {
     @Published var trackName: String = ""
     @Published var artistName: String = ""
-    @Published var albumArt: NSImage? = nil
+    @Published var albumArt: NSImage? = nil {
+        didSet { updateTrackCard() }
+    }
+    /// 轮盘中心显示的曲目卡片：曲名、歌手与封面作为一个整体切换。新曲目要等封面到齐
+    /// （或确认没有封面）才提交，轮盘据此整张推入，不会出现空的封面位。
+    @Published private(set) var trackCard: TrackCard?
+
+    struct TrackCard: Equatable {
+        let id = UUID()
+        let title: String
+        let artist: String
+        var artwork: NSImage?
+        /// 用户正看着轮盘时换歌才推入；轮盘收起期间换的歌，打开时直接显示。
+        var animated: Bool = true
+
+        var key: String { "\(title)|\(artist)" }
+
+        static func == (lhs: TrackCard, rhs: TrackCard) -> Bool {
+            lhs.id == rhs.id && lhs.artwork === rhs.artwork
+        }
+    }
     @Published var isPlaying: Bool = false
     @Published var hasNowPlaying: Bool = false
     @Published private(set) var duration: TimeInterval? = nil
@@ -23,6 +46,23 @@ class NowPlayingService: ObservableObject {
     @Published private(set) var progressTimestamp: Date? = nil
     @Published private(set) var playbackRate: Double? = nil
     @Published private(set) var canSeek: Bool = false
+    /// 播放器切歌期间为真。此时它会静默丢弃新的切歌命令（QQ 音乐实测：
+    /// 从命令发出到报告新曲目后约 0.5s），轮盘据此把上一首/下一首显示为不可点。
+    @Published private(set) var isSkipLocked = false
+    /// 最近一次切歌的方向，决定新曲目滑入的方向。
+    @Published private(set) var skipDirection: SkipDirection = .forward
+    /// 每次按下上一首/下一首都会更新：被接受时按钮轻缩，被拒绝时按钮轻晃。
+    @Published private(set) var skipEvent: SkipEvent?
+
+    enum SkipDirection: Equatable {
+        case forward, backward
+    }
+
+    struct SkipEvent: Equatable {
+        let id = UUID()
+        let direction: SkipDirection
+        let accepted: Bool
+    }
     var recentMusicAppBundleIdentifiers: (() -> [String])?
 
     private var isObserving = false
@@ -35,9 +75,33 @@ class NowPlayingService: ObservableObject {
     private var upkeepTimer: Timer?
     private var pendingClearWorkItem: DispatchWorkItem?
 
-    /// 可用的 helper 后端，按优先级排列；快速失败的后端会被移出队列。
-    private var backendQueue: [HelperBackend] = []
-    private var activeBackend: HelperBackend?
+    /// perl adapter 按需读取。同一时刻最多一个 `get` 在跑。
+    private var adapterReadProcess: Process?
+    private var adapterStreamProcess: Process?
+    private var adapterStreamStartDate: Date = .distantPast
+    private var adapterStreamRestartWorkItem: DispatchWorkItem?
+    private var skipUnlockWorkItem: DispatchWorkItem?
+    /// 播放器在此时刻之前仍会丢弃切歌命令；按钮已恢复，此前的按下延后到这里再发送。
+    private var skipCommandReadyAt: Date = .distantPast
+    private var deferredSkipWorkItem: DispatchWorkItem?
+    private var skipRetryWorkItem: DispatchWorkItem?
+    private var skipDirectionResetWorkItem: DispatchWorkItem?
+
+    /// QQ 音乐播放栏比 MediaRemote 早约 0.4s 更新曲名，切歌期间短暂轮询它。
+    private let qqTitleReader = QQMusicTitleReader()
+    private var earlyTitleTimer: Timer?
+    private var cardCommitWorkItem: DispatchWorkItem?
+    /// 冻结期内收到的最新播放状态，冻结结束时补上，不因 stream 不重发而丢失。
+    private var lastReportedPlaying: Bool?
+    private var playingReapplyWorkItem: DispatchWorkItem?
+    private var adapterFailures = 0
+    private var isMenuPresented = false
+    /// 本次打开后是否已收到过快照：在此之前到达的新曲目是收起期间换的，不推入。
+    private var hasSnapshotSincePresentation = false
+    private var nextCardAnimated = true
+    /// 常驻兜底 helper 连续快速失败时的退避间隔；稳定运行后归零。
+    private var helperRetryDelay: TimeInterval = 0
+    private var wakeObserver: NSObjectProtocol?
     private var currentSessionBundleIdentifier: String?
     private var pendingPlaybackIntent: PendingPlaybackIntent?
     private var pendingPlaybackIntentExpirationWorkItem: DispatchWorkItem?
@@ -129,18 +193,43 @@ class NowPlayingService: ObservableObject {
         mrRegistered = false
     }
 
-    // MARK: - Helper 后端
+    // MARK: - 数据来源
 
     /// 读取"正在播放"信息的两条路，按优先级排列：
     ///
-    /// 1. `perlAdapter` —— 打包在 App 里的 MediaRemoteAdapter.framework（BSD-3，
+    /// 1. perl adapter —— 打包在 App 里的 MediaRemoteAdapter.framework（BSD-3，
     ///    见 Vendor/），由系统自带的 `/usr/bin/perl`（Apple 签名，被系统视作
-    ///    `com.apple.perl`）加载运行。所有 Mac 都可用，无需任何开发工具。
-    /// 2. `swiftToolchain` —— 旧方案：把脚本交给 Swift 工具链解释执行。
+    ///    `com.apple.perl`）加载运行。所有 Mac 都可用，按需一次性读取。
+    /// 2. Swift 工具链常驻 helper —— 旧方案：把脚本交给 Swift 工具链解释执行。
     ///    仅在装有 Xcode/CLT 的机器上可用，作为 perl 路不通时的兜底。
-    private enum HelperBackend: Equatable {
-        case perlAdapter
-        case swiftToolchain
+    private static let adapterFailureLimit = 3
+    /// 切歌后等待新曲目的上限（QQ 音乐实测约 0.7s 才报告）。
+    private static let skipConfirmTimeout: TimeInterval = 2
+    /// 报告新曲目后播放器仍会丢弃命令的时长（实测 0.24s 丢弃、0.54s 接受）。
+    private static let skipSettleDelay: TimeInterval = 0.6
+    /// 新曲目快照里没有封面时，最多再等这么久；仍没有就以无封面卡片提交。
+    /// 实测封面通常与曲名同时或紧随其后（0ms）到达。
+    private static let cardArtworkWait: TimeInterval = 0.6
+    private static let earlyTitlePollInterval: TimeInterval = 0.025
+    /// 播放器偶尔无故丢弃命令（实测空闲数分钟后的首次切歌也会被丢）。超过这个时间
+    /// 仍没有新曲目，就补发一次。播放栏约 0.28s 就有反应；只有系统报告时约 0.7s。
+    private static let skipRetryDelayWithTitle: TimeInterval = 0.8
+    private static let skipRetryDelayWithoutTitle: TimeInterval = 1.4
+    private static let adapterReadTimeout: TimeInterval = 3
+    private static let helperMaxRetryDelay: TimeInterval = 300
+
+    private static var adapterAvailable: Bool {
+        perlURL != nil && adapterScriptURL != nil && adapterFrameworkURL != nil
+    }
+
+    private static var residentHelperAvailable: Bool {
+        helperSwiftURL != nil && helperScriptURL != nil
+    }
+
+    /// 连续失败达到上限后，播放命令退回媒体键，并启动常驻兜底；
+    /// 之后每次唤出仍会尝试读取，一旦成功就切回来。
+    private var adapterUsable: Bool {
+        Self.adapterAvailable && adapterFailures < Self.adapterFailureLimit
     }
 
     private static let perlURL: URL? = {
@@ -173,16 +262,6 @@ class NowPlayingService: ObservableObject {
         }
     }()
 
-    private static func availableBackends() -> [HelperBackend] {
-        var result: [HelperBackend] = []
-        if perlURL != nil, adapterScriptURL != nil, adapterFrameworkURL != nil {
-            result.append(.perlAdapter)
-        }
-        if helperSwiftURL != nil, helperScriptURL != nil {
-            result.append(.swiftToolchain)
-        }
-        return result
-    }
 
     private static let helperScriptURL: URL? = {
         guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -304,8 +383,16 @@ class NowPlayingService: ObservableObject {
         // 进程内直读。在未被系统限制的机器上这一步即可拿到数据。
         directRead()
 
-        backendQueue = Self.availableBackends()
+        adapterFailures = 0
+        helperRetryDelay = 0
+        readAdapterOnce()
         startHelper()
+
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.handleSystemWake()
+        }
 
         // 轻量巡检：维持 hasNowPlaying（播放器开关），并在直读可用时保持同步。
         // helper 不可用时，这是唯一的更新来源。
@@ -325,7 +412,25 @@ class NowPlayingService: ObservableObject {
         artworkSettleWorkItem?.cancel()
         artworkSettleWorkItem = nil
         cancelPendingPlaybackIntent()
+        stopAdapterStream()
+        deferredSkipWorkItem?.cancel()
+        deferredSkipWorkItem = nil
+        stopEarlyTitleWatch()
+        cardCommitWorkItem?.cancel()
+        cardCommitWorkItem = nil
+        skipRetryWorkItem?.cancel()
+        skipRetryWorkItem = nil
+        playingReapplyWorkItem?.cancel()
+        playingReapplyWorkItem = nil
+        unlockSkips()
+        if let process = adapterReadProcess, process.isRunning { process.terminate() }
+        adapterReadProcess = nil
+        canSeek = false
         stopHelper()
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
+        wakeObserver = nil
         Self.unregisterMRNotifications()
     }
 
@@ -334,7 +439,20 @@ class NowPlayingService: ObservableObject {
         pendingClearWorkItem?.cancel()
         artworkSettleWorkItem?.cancel()
         stopHelper()
+        skipUnlockWorkItem?.cancel()
+        deferredSkipWorkItem?.cancel()
+        skipDirectionResetWorkItem?.cancel()
+        playingReapplyWorkItem?.cancel()
+        skipRetryWorkItem?.cancel()
+        cardCommitWorkItem?.cancel()
+        earlyTitleTimer?.invalidate()
+        adapterStreamRestartWorkItem?.cancel()
+        if let process = adapterStreamProcess, process.isRunning { process.terminate() }
+        if let process = adapterReadProcess, process.isRunning { process.terminate() }
         upkeepTimer?.invalidate()
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
         if isObserving { Self.unregisterMRNotifications() }
     }
 
@@ -358,16 +476,40 @@ class NowPlayingService: ObservableObject {
         guard isObserving else { return }
         cancelPendingPlaybackIntent()
         guard !trackName.isEmpty else { return }
-        routePlaybackCommand(adapterCommand: 4, fallbackMediaKey: NX_KEYTYPE_NEXT)
-        playingFrozenUntil = Date().addingTimeInterval(1.5)
+        performSkip(.forward)
     }
 
     func previousTrack() {
         guard isObserving else { return }
         cancelPendingPlaybackIntent()
         guard !trackName.isEmpty else { return }
-        routePlaybackCommand(adapterCommand: 5, fallbackMediaKey: NX_KEYTYPE_PREVIOUS)
-        playingFrozenUntil = Date().addingTimeInterval(1.5)
+        performSkip(.backward)
+    }
+
+    /// 切歌期间的点击不发命令，只给"现在不行"的反馈；不排队，免得用户连点后被动连跳。
+    private func performSkip(_ direction: SkipDirection) {
+        guard !isSkipLocked else {
+            skipEvent = SkipEvent(direction: direction, accepted: false)
+            return
+        }
+        skipDirectionResetWorkItem?.cancel()
+        skipDirection = direction
+        skipEvent = SkipEvent(direction: direction, accepted: true)
+
+        let send: () -> Void = { [weak self] in
+            self?.sendSkipCommand(direction, isRetry: false)
+        }
+        // 按钮随新曲目滑入就已恢复，播放器却还要忙一小会儿：这一下仍算数，
+        // 等它能接收时再发。之后立即上锁，所以最多只延后这一次，不会排队。
+        let delay = max(0, skipCommandReadyAt.timeIntervalSinceNow)
+        if delay > 0 {
+            let work = DispatchWorkItem(block: send)
+            deferredSkipWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        } else {
+            send()
+        }
+        lockSkips(for: delay + Self.skipConfirmTimeout)
     }
 
     private func routePlaybackCommand(adapterCommand: Int, fallbackMediaKey: Int32) {
@@ -377,7 +519,7 @@ class NowPlayingService: ObservableObject {
     }
 
     private func sendAdapterPlaybackCommand(_ command: Int) -> Bool {
-        guard activeBackend == .perlAdapter,
+        guard adapterUsable,
               let perl = Self.perlURL,
               let script = Self.adapterScriptURL,
               let framework = Self.adapterFrameworkURL else { return false }
@@ -425,6 +567,8 @@ class NowPlayingService: ObservableObject {
             expiresAt: Date().addingTimeInterval(playbackIntentLifetime)
         )
         pendingPlaybackIntent = intent
+        // 等待播放器暴露可控会话期间保持推送，才能及时兑现这次播放意图。
+        updateAdapterStream()
 
         let expiration = DispatchWorkItem { [weak self] in
             guard let self,
@@ -442,6 +586,7 @@ class NowPlayingService: ObservableObject {
         pendingPlaybackIntentExpirationWorkItem?.cancel()
         pendingPlaybackIntentExpirationWorkItem = nil
         pendingPlaybackIntent = nil
+        updateAdapterStream()
     }
 
     private func fulfillPendingPlaybackIntent(
@@ -470,7 +615,7 @@ class NowPlayingService: ObservableObject {
     func seek(to seconds: TimeInterval) {
         guard isObserving else { return }
         cancelPendingPlaybackIntent()
-        guard activeBackend == .perlAdapter,
+        guard adapterUsable,
               canSeek,
               let duration, duration > 0,
               let perl = Self.perlURL,
@@ -524,62 +669,449 @@ class NowPlayingService: ObservableObject {
         keyUp?.cgEvent?.post(tap: .cghidEventTap)
     }
 
-    /// 轮盘弹出时调用。常驻 helper 已持续同步，这里只补一次直读。
+    /// 轮盘弹出时调用：界面先显示缓存，同时启动推送（首帧约 20ms）。
     func refreshForMenuPresentation() {
         guard isObserving else { return }
+        isMenuPresented = true
+        hasSnapshotSincePresentation = false
         directRead()
+        updateAdapterStream()
+        if currentSessionBundleIdentifier == QQMusicTitleReader.bundleIdentifier {
+            qqTitleReader.prepare()
+        }
+        healResidentHelperOnPresentation()
     }
 
-    // MARK: - 常驻 helper
+    /// 轮盘收起后结束推送（播放意图仍在等待时除外）。
+    func menuDidDismiss() {
+        isMenuPresented = false
+        hasSnapshotSincePresentation = false
+        updateAdapterStream()
+    }
 
-    private func startHelper() {
+    private func sendSkipCommand(_ direction: SkipDirection, isRetry: Bool) {
         guard isObserving else { return }
-        guard helperProcess == nil else { return }
-        guard let backend = backendQueue.first else {
-            // 没有可用后端：保留播放控制，仅无法显示曲目信息。
+        deferredSkipWorkItem = nil
+        switch direction {
+        case .forward:
+            routePlaybackCommand(adapterCommand: 4, fallbackMediaKey: NX_KEYTYPE_NEXT)
+        case .backward:
+            routePlaybackCommand(adapterCommand: 5, fallbackMediaKey: NX_KEYTYPE_PREVIOUS)
+        }
+        playingFrozenUntil = Date().addingTimeInterval(1.5)
+        startEarlyTitleWatch()
+        if isRetry {
+            // 只补发一次：再没反应就让锁超时解开，不会多切一首。
+            lockSkips(for: Self.skipConfirmTimeout)
+        } else {
+            scheduleSkipRetry(direction)
+        }
+    }
+
+    private func scheduleSkipRetry(_ direction: SkipDirection) {
+        skipRetryWorkItem?.cancel()
+        let shownTitle = trackName
+        let readsPlayBar = currentSessionBundleIdentifier == QQMusicTitleReader.bundleIdentifier
+            && qqTitleReader.read() != nil
+        let wait = readsPlayBar ? Self.skipRetryDelayWithTitle : Self.skipRetryDelayWithoutTitle
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isObserving, self.isSkipLocked,
+                  self.trackName == shownTitle else { return }
+            self.skipRetryWorkItem = nil
+            NSLog("dok.nowPlaying: skip not confirmed in %.1fs; resending once", wait)
+            self.sendSkipCommand(direction, isRetry: true)
+        }
+        skipRetryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: work)
+    }
+
+    // MARK: - 切歌锁
+
+    /// 锁定上一首/下一首，到期自动解锁；再次调用会以新的时长覆盖。
+    private func lockSkips(for duration: TimeInterval) {
+        isSkipLocked = true
+        skipUnlockWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            // 超时没等到新曲目：没有滑入动画在进行，方向可以立即复位。
+            self?.unlockSkips()
+            self?.resetSkipDirection(after: 0)
+        }
+        skipUnlockWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+    }
+
+    private func unlockSkips() {
+        skipUnlockWorkItem?.cancel()
+        skipUnlockWorkItem = nil
+        if isSkipLocked { isSkipLocked = false }
+    }
+
+    /// 之后播放器自行换歌（自动连播、在播放器里点）时按"前进"方向滑入。
+    /// 不能与新曲目同一刻复位，否则后退切歌的新曲目会从错误的一侧滑入。
+    private func resetSkipDirection(after delay: TimeInterval) {
+        skipDirectionResetWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.skipDirectionResetWorkItem = nil
+            if self.skipDirection != .forward { self.skipDirection = .forward }
+        }
+        skipDirectionResetWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// 新曲目到达：按钮与滑入动画同时恢复。播放器在之后约 0.6s 内仍会丢弃命令
+    /// （轮盘打开期间它自己换歌时也一样），这段由 skipCommandReadyAt 延后发送吸收。
+    /// 唤出时首帧追上缓存不算换歌。
+    private func noteTrackChange(from previousTitle: String) {
+        skipRetryWorkItem?.cancel()
+        skipRetryWorkItem = nil
+        let changedWhileOpen = adapterStreamProcess != nil
+            && Date().timeIntervalSince(adapterStreamStartDate) > 0.3
+        guard isSkipLocked || (!previousTitle.isEmpty && changedWhileOpen) else { return }
+        skipCommandReadyAt = Date().addingTimeInterval(Self.skipSettleDelay)
+    }
+
+    // MARK: - 曲目卡片
+
+    /// 每次曲名、歌手或封面变化后调用。同一曲目只原地更新封面；新曲目等封面到齐再提交。
+    private func updateTrackCard() {
+        guard !trackName.isEmpty else {
+            cardCommitWorkItem?.cancel()
+            cardCommitWorkItem = nil
+            if trackCard != nil { trackCard = nil }
             return
         }
-        launchHelper(backend)
+        let key = "\(trackName)|\(artistName)"
+        if var card = trackCard, card.key == key {
+            // 封面晚到或更换：原地替换，不推入。为防闪烁暂时隐藏的封面不覆盖已显示的。
+            if let art = albumArt, card.artwork !== art {
+                card.artwork = art
+                trackCard = card
+            }
+            return
+        }
+        if albumArt != nil {
+            commitTrackCard()
+        } else if cardCommitWorkItem == nil {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, "\(self.trackName)|\(self.artistName)" == key else { return }
+                self.commitTrackCard()
+            }
+            cardCommitWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.cardArtworkWait, execute: work)
+        }
     }
 
-    private func launchHelper(_ backend: HelperBackend) {
-        guard isObserving else { return }
-        let observationID = observationID
-        let executable: URL
-        let arguments: [String]
+    /// 卡片推入的同一刻恢复切歌按钮；方向在推入动画结束后才复位，免得滑向错误一侧。
+    private func commitTrackCard() {
+        cardCommitWorkItem?.cancel()
+        cardCommitWorkItem = nil
+        trackCard = TrackCard(title: trackName, artist: artistName, artwork: albumArt,
+                              animated: nextCardAnimated)
+        nextCardAnimated = true
+        unlockSkips()
+        resetSkipDirection(after: Self.skipSettleDelay)
+    }
 
-        switch backend {
-        case .perlAdapter:
-            guard let perl = Self.perlURL,
-                  let script = Self.adapterScriptURL,
-                  let framework = Self.adapterFrameworkURL else { return }
-            executable = perl
-            // --no-diff：每行都是完整快照，解析无需维护增量合并状态。
-            arguments = [script.path, framework.path, "stream", "--no-diff"]
+    // MARK: - QQ 音乐播放栏曲名
 
-        case .swiftToolchain:
-            guard let swiftURL = Self.helperSwiftURL,
-                  let scriptURL = Self.helperScriptURL else { return }
-            do {
-                try Self.helperScript.write(to: scriptURL, atomically: true, encoding: .utf8)
-            } catch {
-                NSLog("⚠️ 无法写入 now playing helper 脚本: %@", error.localizedDescription)
+    /// 切歌命令发出后短暂轮询播放栏（单次约 0.1ms），用来尽早确认播放器收到了命令：
+    /// 播放栏约 0.3s 就换歌，MediaRemote 要约 0.7s。确认后就不再补发。
+    /// 显示仍以 MediaRemote 为准，卡片要等封面一起到齐。
+    private func startEarlyTitleWatch() {
+        stopEarlyTitleWatch()
+        guard currentSessionBundleIdentifier == QQMusicTitleReader.bundleIdentifier,
+              let baseline = qqTitleReader.read() else { return }
+        let startedAt = Date()
+        let timer = Timer(timeInterval: Self.earlyTitlePollInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            guard self.isSkipLocked,
+                  Date().timeIntervalSince(startedAt) < Self.skipConfirmTimeout else {
+                self.stopEarlyTitleWatch()
                 return
             }
-            executable = swiftURL
-            arguments = [scriptURL.path]
+            guard let current = self.qqTitleReader.read(),
+                  current.title != baseline.title || current.artist != baseline.artist else { return }
+            self.stopEarlyTitleWatch()
+            self.skipRetryWorkItem?.cancel()
+            self.skipRetryWorkItem = nil
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        earlyTitleTimer = timer
+    }
+
+    private func stopEarlyTitleWatch() {
+        earlyTitleTimer?.invalidate()
+        earlyTitleTimer = nil
+    }
+
+    // MARK: - perl adapter 按需推送
+
+    /// 轮盘打开或播放意图等待期间运行 `stream --no-diff`，其余时间不留进程。
+    private func updateAdapterStream() {
+        let needed = isObserving && Self.adapterAvailable
+            && (isMenuPresented || pendingPlaybackIntent != nil)
+        if needed {
+            startAdapterStream()
+        } else {
+            stopAdapterStream()
+        }
+    }
+
+    private func startAdapterStream() {
+        guard adapterStreamProcess == nil,
+              let perl = Self.perlURL,
+              let script = Self.adapterScriptURL,
+              let framework = Self.adapterFrameworkURL else { return }
+        adapterStreamRestartWorkItem?.cancel()
+        adapterStreamRestartWorkItem = nil
+
+        let observationID = observationID
+        let buffer = LineBuffer()
+        let process = Process()
+        let output = Pipe()
+        let errorOutput = Pipe()
+        process.executableURL = perl
+        // --no-diff：每行都是完整快照，解析无需维护增量合并状态。
+        process.arguments = [script.path, framework.path, "stream", "--no-diff"]
+        process.standardOutput = output
+        process.standardError = errorOutput
+
+        errorOutput.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
         }
 
+        output.fileHandleForReading.readabilityHandler = { [weak self, weak process] handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            let lines = buffer.append(chunk)
+            guard !lines.isEmpty else { return }
+            DispatchQueue.main.async {
+                guard let self, let process,
+                      self.isObserving, self.observationID == observationID,
+                      self.adapterStreamProcess === process else { return }
+                for line in lines {
+                    self.handleAdapterStreamLine(line)
+                }
+            }
+        }
+
+        process.terminationHandler = { [weak self] finished in
+            output.fileHandleForReading.readabilityHandler = nil
+            let status = finished.terminationStatus
+            let wasSignal = finished.terminationReason == .uncaughtSignal
+            DispatchQueue.main.async {
+                guard let self, self.adapterStreamProcess === finished else { return }
+                self.adapterStreamDidTerminate(status: status, wasSignal: wasSignal,
+                                               observationID: observationID)
+            }
+        }
+
+        do {
+            try process.run()
+            adapterStreamProcess = process
+            adapterStreamStartDate = Date()
+        } catch {
+            output.fileHandleForReading.readabilityHandler = nil
+            errorOutput.fileHandleForReading.readabilityHandler = nil
+            recordAdapterFailure()
+        }
+    }
+
+    private func stopAdapterStream() {
+        adapterStreamRestartWorkItem?.cancel()
+        adapterStreamRestartWorkItem = nil
+        guard let process = adapterStreamProcess else { return }
+        process.terminationHandler = nil
+        (process.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        if process.isRunning { process.terminate() }
+        adapterStreamProcess = nil
+    }
+
+    private func adapterStreamDidTerminate(status: Int32, wasSignal: Bool, observationID: UUID) {
+        adapterStreamProcess = nil
+        let uptime = Date().timeIntervalSince(adapterStreamStartDate)
+        NSLog("dok.nowPlaying: adapter stream exited %@=%d uptime=%.1fs",
+              wasSignal ? "signal" : "code", status, uptime)
+        guard isObserving, self.observationID == observationID else { return }
+
+        // 刚启动就退出视为一次失败；仍需要推送时稍后重启，失败累计后交给兜底。
+        if uptime < 1 { recordAdapterFailure() }
+        guard adapterUsable else { return }
+        let restart = DispatchWorkItem { [weak self] in
+            guard let self, self.observationID == observationID else { return }
+            self.adapterStreamRestartWorkItem = nil
+            self.updateAdapterStream()
+        }
+        adapterStreamRestartWorkItem = restart
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: restart)
+    }
+
+    private func handleAdapterStreamLine(_ line: Data) {
+        guard let snapshot = Self.parseAdapterStreamLine(line) else { return }
+        acceptAdapterSnapshot(snapshot)
+    }
+
+    /// 任一 perl 读取成功：它是权威来源，兜底 helper 不再需要。
+    private func acceptAdapterSnapshot(_ snapshot: NowPlayingSnapshot) {
+        adapterFailures = 0
+        canSeek = true
+        if helperProcess != nil { stopHelper() }
+        fulfillPendingPlaybackIntent(
+            using: snapshot,
+            reportedBundleIdentifier: reportedBundleIdentifier(for: snapshot)
+        )
+        apply(snapshot)
+    }
+
+    private func recordAdapterFailure() {
+        adapterFailures += 1
+        NSLog("dok.nowPlaying: adapter failure %d/%d", adapterFailures, Self.adapterFailureLimit)
+        if !adapterUsable {
+            canSeek = false
+            stopAdapterStream()
+            startHelper()
+        }
+    }
+
+    private func readAdapterOnce() {
+        guard isObserving, adapterReadProcess == nil,
+              let perl = Self.perlURL,
+              let script = Self.adapterScriptURL,
+              let framework = Self.adapterFrameworkURL else { return }
+
+        let observationID = observationID
+        let process = Process()
+        let output = Pipe()
+        let errorOutput = Pipe()
+        process.executableURL = perl
+        process.arguments = [script.path, framework.path, "get"]
+        process.standardOutput = output
+        process.standardError = errorOutput
+
+        let startedAt = Date()
+        do {
+            try process.run()
+        } catch {
+            finishAdapterRead(status: -1, wasSignal: false, output: Data(),
+                              errorText: "launch failed: \(error.localizedDescription)",
+                              startedAt: startedAt, observationID: observationID)
+            return
+        }
+        adapterReadProcess = process
+
+        // Artwork makes the payload larger than a pipe buffer, so drain while it runs.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorOutput.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let status = process.terminationStatus
+            let wasSignal = process.terminationReason == .uncaughtSignal
+            DispatchQueue.main.async {
+                self?.finishAdapterRead(status: status, wasSignal: wasSignal, output: data,
+                                        errorText: String(decoding: errorData, as: UTF8.self),
+                                        startedAt: startedAt, observationID: observationID)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.adapterReadTimeout) { [weak process] in
+            if let process, process.isRunning { process.terminate() }
+        }
+    }
+
+    private func finishAdapterRead(
+        status: Int32,
+        wasSignal: Bool,
+        output: Data,
+        errorText: String,
+        startedAt: Date,
+        observationID: UUID
+    ) {
+        adapterReadProcess = nil
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard isObserving, self.observationID == observationID else { return }
+
+        guard status == 0, !wasSignal else {
+            NSLog("dok.nowPlaying: adapter get failed %@=%d in %.0fms",
+                  wasSignal ? "signal" : "code", status, elapsed * 1000)
+            recordAdapterFailure()
+            return
+        }
+        acceptAdapterSnapshot(Self.parseAdapterOutput(output))
+    }
+
+    private func handleSystemWake() {
+        guard isObserving else { return }
+        NSLog("dok.nowPlaying: system woke; refreshing sources")
+        readAdapterOnce()
+        // 睡眠可能让常驻 helper 失联而不退出，唤醒后直接重启。
+        if helperProcess != nil {
+            stopHelper()
+        }
+        helperRetryDelay = 0
+        startHelper()
+    }
+
+    // MARK: - 常驻兜底 helper（Swift 工具链）
+
+    private func startHelper() {
+        guard isObserving, !adapterUsable, Self.residentHelperAvailable else { return }
+        guard helperProcess == nil else { return }
+        helperRestartWorkItem?.cancel()
+        helperRestartWorkItem = nil
+        launchHelper()
+    }
+
+    /// 唤出时常驻 helper 在跑、播放器也在、却没有曲目：视为失联，重启它。
+    private func healResidentHelperOnPresentation() {
+        guard !adapterUsable, Self.residentHelperAvailable else { return }
+        if helperProcess == nil {
+            // 跳过退避等待：用户此刻正需要数据。
+            startHelper()
+            return
+        }
+        let uptime = Date().timeIntervalSince(helperStartDate)
+        guard trackName.isEmpty, runningMusicApp != nil, uptime > 5 else { return }
+        NSLog("dok.nowPlaying: resident helper has no data on summon; restarting")
+        stopHelper()
+        startHelper()
+    }
+
+    private func launchHelper() {
+        guard isObserving,
+              let swiftURL = Self.helperSwiftURL,
+              let scriptURL = Self.helperScriptURL else { return }
+        let observationID = observationID
+        do {
+            try Self.helperScript.write(to: scriptURL, atomically: true, encoding: .utf8)
+        } catch {
+            NSLog("⚠️ 无法写入 now playing helper 脚本: %@", error.localizedDescription)
+            return
+        }
         // Each process owns its buffer, so an old pipe cannot mix partial JSON
         // into a replacement helper after a quick off/on toggle.
         let helperBuffer = LineBuffer()
 
         let proc = Process()
         let pipe = Pipe()
-        proc.executableURL = executable
-        proc.arguments = arguments
+        let errorPipe = Pipe()
+        proc.executableURL = swiftURL
+        proc.arguments = [scriptURL.path]
         proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
+        proc.standardError = errorPipe
+
+        // The handler removes itself at EOF, so output printed while the helper
+        // dies is still delivered and nothing blocks on a pipe a child holds open.
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+        }
 
         pipe.fileHandleForReading.readabilityHandler = { [weak self, weak proc] handle in
             let chunk = handle.availableData
@@ -591,17 +1123,19 @@ class NowPlayingService: ObservableObject {
                       self.isObserving, self.observationID == observationID,
                       self.helperProcess === proc else { return }
                 for line in lines {
-                    self.handleHelperLine(line, backend: backend)
+                    self.handleHelperLine(line)
                 }
             }
         }
 
         proc.terminationHandler = { [weak self] finishedProcess in
             pipe.fileHandleForReading.readabilityHandler = nil
+            let status = finishedProcess.terminationStatus
+            let wasSignal = finishedProcess.terminationReason == .uncaughtSignal
             DispatchQueue.main.async {
-                guard let self,
-                      self.isObserving, self.observationID == observationID,
+                guard let self, self.isObserving, self.observationID == observationID,
                       self.helperProcess === finishedProcess else { return }
+                self.recordHelperExit(status: status, wasSignal: wasSignal)
                 self.helperDidTerminate()
             }
         }
@@ -610,15 +1144,14 @@ class NowPlayingService: ObservableObject {
             try proc.run()
             helperProcess = proc
             helperStartDate = Date()
-            activeBackend = backend
-            canSeek = backend == .perlAdapter
+            NSLog("dok.nowPlaying: resident helper launched pid=%d", proc.processIdentifier)
         } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
             proc.terminationHandler = nil
             NSLog("⚠️ 无法启动 now playing helper: %@", error.localizedDescription)
             helperProcess = nil
-            activeBackend = nil
-            canSeek = false
+            scheduleHelperRestart(quickFailure: true)
         }
     }
 
@@ -631,25 +1164,31 @@ class NowPlayingService: ObservableObject {
             if proc.isRunning { proc.terminate() }
         }
         helperProcess = nil
-        activeBackend = nil
-        canSeek = false
+    }
+
+    private func recordHelperExit(status: Int32, wasSignal: Bool) {
+        let uptime = Date().timeIntervalSince(helperStartDate)
+        NSLog("dok.nowPlaying: resident helper exited %@=%d uptime=%.1fs",
+              wasSignal ? "signal" : "code", status, uptime)
     }
 
     private func helperDidTerminate() {
         helperProcess = nil
-        activeBackend = nil
-        canSeek = false
         guard isObserving else { return }
-
-        // 启动后很快就退出说明这个后端在当前机器上跑不通，换下一个；
-        // 运行良久后的意外退出则视为偶发，同一后端延迟重启。
         let uptime = Date().timeIntervalSince(helperStartDate)
-        if uptime < 5, !backendQueue.isEmpty {
-            backendQueue.removeFirst()
-        }
-        guard !backendQueue.isEmpty else { return }
+        scheduleHelperRestart(quickFailure: uptime < 5)
+    }
 
-        // helper 意外退出时延迟重启，避免异常情况下反复拉起进程。
+    /// 快速失败按 30s 起翻倍退避（上限 5 分钟），不再永久放弃；
+    /// 运行良久后的偶发退出 3 秒后重启并清零退避。
+    private func scheduleHelperRestart(quickFailure: Bool) {
+        guard isObserving, !adapterUsable, Self.residentHelperAvailable else { return }
+        helperRetryDelay = quickFailure
+            ? min(max(helperRetryDelay * 2, 30), Self.helperMaxRetryDelay)
+            : 0
+        let delay = quickFailure ? helperRetryDelay : 3
+        NSLog("dok.nowPlaying: resident helper restart in %.0fs", delay)
+
         helperRestartWorkItem?.cancel()
         let observationID = observationID
         let restart = DispatchWorkItem { [weak self] in
@@ -659,25 +1198,11 @@ class NowPlayingService: ObservableObject {
             self.startHelper()
         }
         helperRestartWorkItem = restart
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: restart)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: restart)
     }
 
-    private func handleHelperLine(_ line: Data, backend: HelperBackend) {
-        guard isObserving else { return }
-        let snapshot: NowPlayingSnapshot?
-        switch backend {
-        case .perlAdapter:
-            snapshot = Self.parseAdapterLine(line)
-        case .swiftToolchain:
-            snapshot = Self.parseSnapshot(line)
-        }
-        guard let snapshot else { return }
-        if backend == .perlAdapter {
-            fulfillPendingPlaybackIntent(
-                using: snapshot,
-                reportedBundleIdentifier: reportedBundleIdentifier(for: snapshot)
-            )
-        }
+    private func handleHelperLine(_ line: Data) {
+        guard isObserving, let snapshot = Self.parseSnapshot(line) else { return }
         apply(snapshot)
     }
 
@@ -737,7 +1262,7 @@ class NowPlayingService: ObservableObject {
     private func upkeep() {
         guard isObserving else { return }
         // helper 在跑时它是权威来源，直读的空结果不参与清理。
-        directRead(applyEmpty: helperProcess == nil)
+        directRead(applyEmpty: helperProcess == nil && !Self.adapterAvailable)
 
         // 正在显示曲目时不做任何清理判断。
         // 运行中的播放器只是可选提示：沙箱构建可能枚举不到它，
@@ -786,14 +1311,28 @@ class NowPlayingService: ObservableObject {
 
     /// 解析 perl adapter 的输出行：{"type":"data","diff":false,"payload":{...}}。
     /// 使用 --no-diff，payload 始终是完整快照；无音乐时 payload 为空字典。
-    private static func parseAdapterLine(_ data: Data) -> NowPlayingSnapshot? {
+    /// 解析 perl adapter 一次性 `get` 的输出。没有正在播放的内容时它输出 `null`，
+    /// 得到空快照，交给 apply() 走延迟清理。
+    private static func parseAdapterOutput(_ data: Data) -> NowPlayingSnapshot {
+        let payload = (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]))
+            as? [String: Any]
+        return parseAdapterPayload(payload ?? [:])
+    }
+
+    /// 解析 `stream --no-diff` 的一行：`{"type":"data","payload":{...}}`。
+    /// 启动时的首行 payload 为空，随后约 5ms 内送达完整数据；空快照只会触发可取消的延迟清理。
+    private static func parseAdapterStreamLine(_ data: Data) -> NowPlayingSnapshot? {
         guard !data.isEmpty,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               json["type"] as? String == "data",
               let payload = json["payload"] as? [String: Any] else {
             return nil
         }
-        return NowPlayingSnapshot(
+        return parseAdapterPayload(payload)
+    }
+
+    private static func parseAdapterPayload(_ payload: [String: Any]) -> NowPlayingSnapshot {
+        NowPlayingSnapshot(
             pid: Int32(payload["processIdentifier"] as? Int ?? -1),
             title: payload["title"] as? String ?? "",
             artist: payload["artist"] as? String ?? "",
@@ -899,6 +1438,8 @@ class NowPlayingService: ObservableObject {
 
         let trackChanged = trackName != snapshot.title
         if trackChanged {
+            nextCardAnimated = isSkipLocked || (isMenuPresented && hasSnapshotSincePresentation)
+            noteTrackChange(from: trackName)
             if !trackName.isEmpty {
                 cancelPendingPlaybackIntent()
             }
@@ -909,17 +1450,40 @@ class NowPlayingService: ObservableObject {
         hasNowPlaying = true
         currentSessionBundleIdentifier = reportedBundleID
 
-        // 冻结期内不覆盖 isPlaying，防止命令刚发出就被旧状态回弹
-        if Date() > playingFrozenUntil {
-            let playbackStateChanged = isPlaying != snapshot.playing
-            isPlaying = snapshot.playing
-            if playbackStateChanged {
-                resetDisplayedProgressTracking()
-            }
+        // 冻结期内不覆盖 isPlaying，防止命令刚发出就被旧状态回弹（切歌途中播放器会
+        // 短暂报告暂停）。新曲目的快照不受冻结：它的播放状态就是切歌后的真实状态。
+        // 冻结中收到的状态在冻结结束时补上——stream 只在变化时推送，不会再发一次。
+        lastReportedPlaying = snapshot.playing
+        if trackChanged || Date() > playingFrozenUntil {
+            playingReapplyWorkItem?.cancel()
+            playingReapplyWorkItem = nil
+            setPlaying(snapshot.playing)
+        } else {
+            schedulePlayingReapply()
         }
 
         applyProgress(snapshot, trackChanged: trackChanged)
         applyArtwork(snapshot, trackChanged: trackChanged)
+        updateTrackCard()
+        if isMenuPresented { hasSnapshotSincePresentation = true }
+    }
+
+    private func setPlaying(_ playing: Bool) {
+        guard isPlaying != playing else { return }
+        isPlaying = playing
+        resetDisplayedProgressTracking()
+    }
+
+    private func schedulePlayingReapply() {
+        playingReapplyWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isObserving else { return }
+            self.playingReapplyWorkItem = nil
+            if let reported = self.lastReportedPlaying { self.setPlaying(reported) }
+        }
+        playingReapplyWorkItem = work
+        let delay = max(0, playingFrozenUntil.timeIntervalSinceNow) + 0.01
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func reportedBundleIdentifier(for snapshot: NowPlayingSnapshot) -> String? {
@@ -979,7 +1543,11 @@ class NowPlayingService: ObservableObject {
         } else if let artData = snapshot.artworkData {
             artworkSettleWorkItem?.cancel()
             artworkSettleWorkItem = nil
-            albumArt = NSImage(data: artData)
+            // --no-diff 每份快照都带完整封面（播放/暂停变化也会重发同一份）。
+            // 字节没变就保留原图片对象：换成新对象会让轮盘把它当成新封面，重播显影动画。
+            if albumArt == nil || fingerprint != lastAppliedArtworkFingerprint {
+                albumArt = NSImage(data: artData)
+            }
         } else if trackChanged {
             albumArt = nil
         }
@@ -1039,6 +1607,7 @@ class NowPlayingService: ObservableObject {
         trackName = ""
         artistName = ""
         albumArt = nil
+        updateTrackCard()
         currentSessionBundleIdentifier = nil
         clearProgress()
         if Date() > playingFrozenUntil {

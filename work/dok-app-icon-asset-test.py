@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
+"""App icon contract: the ripple mark (one droplet, one ring) on a deep ink tile."""
 import json
 from pathlib import Path
 from PIL import Image
-from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[1]
 APPICON_SET = ROOT / "Resources" / "Assets.xcassets" / "AppIcon.appiconset"
 ICNS = ROOT / "Resources" / "AppIcon.icns"
-SOURCE_ICON = APPICON_SET / "icon_1024x1024.png"
 COMPOSER_ICON = ROOT / "Resources" / "AppIcon.icon"
 COMPOSER_MANIFEST = COMPOSER_ICON / "icon.json"
-COMPOSER_ARTWORK = COMPOSER_ICON / "Assets" / "dok-ring.svg"
+COMPOSER_ARTWORK = COMPOSER_ICON / "Assets" / "dok-ripple.png"
+GENERATOR = ROOT / "work" / "generate-dok-app-icon.py"
+SOURCE_ART = ROOT / "work" / "dok-icon-source.webp"
 PROJECT_YML = ROOT / "project.yml"
-
-
-def dimensions(path: Path) -> tuple[int, int]:
-    with Image.open(path) as image:
-        return image.size
 
 
 def pixel(image: Image.Image, x: float, y: float) -> tuple[int, int, int, int]:
@@ -26,64 +22,35 @@ def pixel(image: Image.Image, x: float, y: float) -> tuple[int, int, int, int]:
     return image.getpixel((px, py))
 
 
-def assert_brand_geometry(path: Path) -> None:
-    with Image.open(path) as source:
-        image = source.convert("RGBA")
-        corner = pixel(image, 0, 0)
-        background = pixel(image, 0.5, 0.28)
-        center = pixel(image, 0.5, 0.5)
-        orbit = 6.2 / 18
-        diagonal = orbit / (2**0.5)
-        satellites = [
-            (0.5, 0.5 - orbit),
-            (0.5 + diagonal, 0.5 - diagonal),
-            (0.5 + orbit, 0.5),
-            (0.5 + diagonal, 0.5 + diagonal),
-            (0.5, 0.5 + orbit),
-            (0.5 - diagonal, 0.5 + diagonal),
-            (0.5 - orbit, 0.5),
-            (0.5 - diagonal, 0.5 - diagonal),
-        ]
-
-        assert max(corner[:3]) < 32 and corner[3] > 220, (
-            f"{path.name} should use a full-bleed opaque black base; macOS supplies the icon mask"
-        )
-        assert max(background[:3]) < 32 and background[3] > 220, f"{path.name} should have a black base"
-        assert min(center[:3]) > 220 and center[3] > 220, f"{path.name} should have a white center node"
-        for coordinate in satellites:
-            dot = pixel(image, *coordinate)
-            assert min(dot[:3]) > 190 and dot[3] > 220, f"{path.name} should preserve all eight white satellites"
-
-
 def main() -> None:
-    assert COMPOSER_MANIFEST.exists(), "macOS 26 must use an Icon Composer document"
-    assert COMPOSER_ARTWORK.exists(), "Icon Composer must contain the dok ring foreground"
+    assert GENERATOR.exists() and SOURCE_ART.exists(), "every icon is rebuilt from the ripple source by the generator"
 
     manifest = json.loads(COMPOSER_MANIFEST.read_text())
-    assert manifest["fill"]["solid"] == "srgb:0.00000,0.00000,0.00000,1.00000", (
-        "Icon Composer background must be opaque black so it fills the system enclosure"
-    )
+    layer = manifest["groups"][0]["layers"][0]
+    assert layer["image-name"] == "dok-ripple.png" and layer["glass"] is False
     assert manifest["supported-platforms"]["squares"] == ["macOS"]
-    assert manifest["groups"][0]["layers"][0]["image-name"] == "dok-ring.svg"
-    assert manifest["groups"][0]["layers"][0]["glass"] is False
+    assert sorted(p.name for p in (COMPOSER_ICON / "Assets").iterdir()) == ["dok-ripple.png"]
+    assert "Resources/AppIcon.icon" in PROJECT_YML.read_text()
+    with Image.open(COMPOSER_ARTWORK) as art:
+        assert art.size == (1024, 1024)
+        corner = art.convert("RGBA").getpixel((0, 0))
+        assert corner[3] == 255 and max(corner[:3]) < 80, "Composer art is full bleed; macOS 26 applies the shape"
 
-    artwork = ElementTree.parse(COMPOSER_ARTWORK)
-    circles = artwork.findall(".//{http://www.w3.org/2000/svg}circle")
-    assert len(circles) == 9, "the Composer foreground must contain eight satellites and one center node"
-    assert "Resources/AppIcon.icon" in PROJECT_YML.read_text(), (
-        "the Icon Composer document must belong to the app target"
-    )
-
-    assert SOURCE_ICON.exists(), "the repository must contain its canonical 1024px app icon"
-    assert ICNS.exists() and ICNS.stat().st_size > 0, "AppIcon.icns should exist and be non-empty"
+    assert ICNS.exists() and ICNS.stat().st_size > 0
 
     for size in [16, 32, 64, 128, 256, 512, 1024]:
-        icon = APPICON_SET / f"icon_{size}x{size}.png"
-        assert icon.exists(), f"missing app icon asset: {icon}"
-        assert dimensions(icon) == (size, size), f"{icon.name} should be {size}x{size}"
+        path = APPICON_SET / f"icon_{size}x{size}.png"
+        with Image.open(path) as source:
+            image = source.convert("RGBA")
+        assert image.size == (size, size), f"{path.name} should be {size}x{size}"
+        assert pixel(image, 0, 0)[3] == 0, f"{path.name} is pre-shaped with transparent template margins"
+        tile = pixel(image, 0.2, 0.2)
+        assert tile[3] > 240 and max(tile[:3]) < 110 and tile[2] > tile[0], f"{path.name} has a deep ink tile"
 
-    for size in [16, 32, 64, 128, 256, 512, 1024]:
-        assert_brand_geometry(APPICON_SET / f"icon_{size}x{size}.png")
+    for size in [16, 32]:
+        with Image.open(APPICON_SET / f"icon_{size}x{size}.png") as source:
+            center = source.convert("RGBA").getpixel((size // 2, size // 2))
+        assert min(center[:3]) > 200, f"the {size}px mark keeps a bright centre dot"
 
     print("dok app icon asset contract passed.")
 

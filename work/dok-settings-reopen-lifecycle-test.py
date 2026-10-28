@@ -28,6 +28,8 @@ final class Lifecycle {
     var settingsKeyMonitor: Any?
     var settingsDeactivationWorkItem: DispatchWorkItem?
     var settingsActivationGeneration = 0
+    var settingsTargetHeight: CGFloat?
+    var settingsHasMeasuredContent = false
 '''
 harness += close + reopen + r'''
 }

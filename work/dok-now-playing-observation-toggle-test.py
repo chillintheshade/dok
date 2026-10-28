@@ -12,6 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE = ROOT / "Sources/dok/NowPlayingService.swift"
+TITLE_READER = ROOT / "Sources/dok/QQMusicTitleReader.swift"
 SWIFTC = Path("/Library/Developer/CommandLineTools/usr/bin/swiftc")
 
 HARNESS = r'''
@@ -38,7 +39,6 @@ extension NowPlayingService {
 
         service.setObservationEnabled(false)
         service.refreshForMenuPresentation()
-        service.backendQueue = [.swiftToolchain]
         service.startHelper()
         precondition(!service.isObserving && service.helperProcess == nil)
         precondition(service.upkeepTimer == nil)
@@ -118,7 +118,7 @@ def main() -> None:
         directory = Path(temporary)
         source = directory / "main.swift"
         executable = directory / "observation-toggle-test"
-        source.write_text("import Combine\n" + SERVICE.read_text() + HARNESS)
+        source.write_text("import Combine\n" + SERVICE.read_text() + "\n" + TITLE_READER.read_text() + HARNESS)
         subprocess.run([str(compiler), "-swift-version", "5", str(source), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True, timeout=20)
 

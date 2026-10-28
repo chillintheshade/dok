@@ -52,7 +52,6 @@ def main() -> None:
         ("let orbit = outerRadius + edgeGap", "single circular orbit"),
         ("recentAppSatellitesLayer", "satellite view layer"),
         ("NativeGlassSamplingLayer(", "native glass satellite base"),
-        ('Image(systemName: "clock.fill")', "recent-app clock badge"),
         ("if app.isRunning", "running-state indicator gate"),
         (".fill(.primary)", "running black/primary dot"),
         ("appState.selectedRecentAppIndex == index", "satellite selection feedback"),

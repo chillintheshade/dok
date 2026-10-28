@@ -55,28 +55,30 @@ def main() -> None:
     assert 'appendingPathComponent("MediaRemoteAdapter.framework")' in source, (
         "the bundled framework must be resolved from the app's Frameworks directory"
     )
-    assert '"stream", "--no-diff"' in source, (
-        "stream with --no-diff keeps every line a full snapshot"
+    # 轮盘打开期间用 stream 实时推送；启动和唤醒用一次性 get 预热缓存。
+    assert '[script.path, framework.path, "stream", "--no-diff"]' in source, "event-driven stream while open"
+    assert '[script.path, framework.path, "get"]' in source, "one-shot get warms the cache"
+    assert source.count('"stream", "--no-diff"') == 1, "only one place may start a stream"
+    update = re.search(r"private func updateAdapterStream\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert update and "isMenuPresented || pendingPlaybackIntent != nil" in update.group("body"), (
+        "the stream exists only while the wheel is open or a play intent waits; never resident"
     )
-    assert "private static func parseAdapterLine" in source, "adapter output needs its own parser"
+    assert "private static func parseAdapterOutput" in source, "get output needs its own parser"
+    assert "private static func parseAdapterStreamLine" in source, "stream lines need their own parser"
+    assert ".fragmentsAllowed" in source, "get prints a bare null when nothing is playing"
 
-    backends = re.search(
-        r"private static func availableBackends\(\) -> \[HelperBackend\] \{(?P<body>.*?)\n    \}\n",
-        source, re.S,
-    )
-    assert backends, "availableBackends body not found"
-    body = backends.group("body")
-    perl_index = body.find(".perlAdapter")
-    swift_index = body.find(".swiftToolchain")
-    assert perl_index != -1 and swift_index != -1, "both backends must be considered"
-    assert perl_index < swift_index, "perl adapter must be preferred over the swift toolchain"
+    # perl 路可用时不启动常驻兜底；连续失败后才启用 swift 工具链。
+    start = re.search(r"private func startHelper\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert start, "startHelper body not found"
+    assert "!adapterUsable" in start.group("body"), "swift helper only runs when perl is not usable"
+    assert "private static let adapterFailureLimit = 3" in source
 
-    # 4. 后端快速失败时切换到下一个，而不是无限重启同一个
-    term = re.search(r"private func helperDidTerminate\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert term, "helperDidTerminate body not found"
-    assert "backendQueue.removeFirst()" in term.group("body"), (
-        "a fast-failing backend must be dropped in favour of the next one"
-    )
+    # 4. 兜底 helper 快速失败时退避重试，而不是永久放弃
+    restart = re.search(r"private func scheduleHelperRestart\(quickFailure: Bool\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert restart, "scheduleHelperRestart body not found"
+    body = restart.group("body")
+    assert "helperRetryDelay * 2" in body and "Self.helperMaxRetryDelay" in body, "exponential capped backoff"
+    assert "backendQueue" not in source, "an exhausted queue must never disable the fallback forever"
 
     print("MediaRemote adapter integration contract passed.")
 

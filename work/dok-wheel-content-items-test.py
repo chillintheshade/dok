@@ -24,13 +24,16 @@ def main() -> None:
         assert needle in STATE, f"missing {description}"
 
     for needle, description in [
-        ("private func addFileSystemItem(chooseFolder: Bool)", "separate file/folder picker"),
-        ("panel.canChooseFiles = !chooseFolder", "file-only picker mode"),
-        ("panel.canChooseDirectories = chooseFolder", "folder-only picker mode"),
-        ("private func addWebLink()", "website entry action"),
-        ("AppItem.normalizedWebURL(from: field.stringValue)", "validated website input"),
-        ('Loc.string("settings.addFile")', "file action row"),
-        ('Loc.string("settings.addLink")', "website action row"),
+        # 添加与编辑统一在右侧面板：应用 / 文件 / 网址 / 按键 四类，同一种操作方式。
+        ("private enum AddKind: String, CaseIterable {\n    case app, file, link, keyAction", "four add kinds"),
+        ("private func itemPanel(_ mode: ItemPanelMode) -> some View", "one shared add/edit panel"),
+        ("openPanel(.add)", "Add opens the panel"),
+        ("openPanel(.edit(item.id))", "editing uses the same panel"),
+        ("private struct AppListPanel: View", "inline app list"),
+        (".onDrop(of: [.fileURL], isTargeted: $targeted)", "files and folders by drag and drop"),
+        ("panel.canChooseFiles = true\n        panel.canChooseDirectories = true", "one picker for files and folders"),
+        ("private struct LinkForm: View", "inline website form"),
+        ("AppItem.normalizedWebURL(from: address)", "validated website input"),
     ]:
         assert needle in SETTINGS, f"missing {description}"
 
@@ -41,10 +44,10 @@ def main() -> None:
 
     for text, language in [(EN, "English"), (ZH, "Chinese")]:
         for key in [
-            "settings.addFile",
-            "settings.addLink",
-            "openPanel.folder.message",
-            "openPanel.file.message",
+            "add.kind.file",
+            "add.kind.link",
+            "panel.dropTitle",
+            "openPanel.message",
             "link.invalid.message",
         ]:
             assert f'"{key}"' in text, f"{language} missing {key}"

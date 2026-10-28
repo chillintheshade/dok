@@ -28,7 +28,9 @@ def main() -> None:
     assert term, "helperDidTerminate body not found"
     term_body = term.group("body")
     assert "guard isObserving else { return }" in term_body, "a stopped service must not resurrect the helper"
-    assert "asyncAfter" in term_body, "helper restart should be delayed, not immediate"
+    assert "scheduleHelperRestart(" in term_body, "helper restart should be delayed, not immediate"
+    restart = re.search(r"private func scheduleHelperRestart\(quickFailure: Bool\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert restart and "asyncAfter" in restart.group("body"), "restart goes through a delayed work item"
 
     # 停止观察时必须回收进程，避免泄漏常驻子进程。
     stop = re.search(r"func stopObserving\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)

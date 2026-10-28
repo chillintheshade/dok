@@ -2,15 +2,16 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 import ServiceManagement
+import UniformTypeIdentifiers
 
 private enum SettingsDesign {
     static let windowWidth: CGFloat = 920
-    static let windowHeight: CGFloat = 520
+    /// 窗口高度随当前页面内容变化；这是首次打开、尚未测得内容时的高度。
+    static let initialWindowHeight: CGFloat = 520
     static let sidebarWidth: CGFloat = 216
     static let navigationRowHeight: CGFloat = 34
     static let rowHeight: CGFloat = 44
     static let controlWidth: CGFloat = 130
-    static let actionPaneWidth: CGFloat = 196
     static let generalContentWidth: CGFloat = 656
     static let dividerWidth: CGFloat = 0.5
     static let navigationRadius: CGFloat = 7
@@ -25,6 +26,33 @@ private enum SettingsDesign {
     static let quietDivider = Color(nsColor: .separatorColor).opacity(0.44)
     static let quickMotion = Animation.easeOut(duration: 0.14)
     static let standardMotion = Animation.easeInOut(duration: 0.16)
+    /// 页面切换与窗口伸缩共用的时长与曲线（与 DokApp.fitSettingsWindow 一致）。
+    static let pageDuration: Double = 0.32
+    static let pageMotion = Animation.timingCurve(0.32, 0.72, 0, 1, duration: pageDuration)
+
+    static var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "–"
+        let build = info?["CFBundleVersion"] as? String
+        return build.map { "\(version) (\($0))" } ?? version
+    }
+}
+
+/// 各页面内容的自然高度，窗口据此调整，页面底部不留空。按页面分开记录：
+/// 切换时立即用新页面的高度伸缩窗口，不必等旧页面淡出。
+private struct SettingsContentHeightKey: PreferenceKey {
+    static var defaultValue: [SettingsTab: CGFloat] = [:]
+    static func reduce(value: inout [SettingsTab: CGFloat], nextValue: () -> [SettingsTab: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+private extension View {
+    func reportsContentHeight(for tab: SettingsTab) -> some View {
+        background(GeometryReader { proxy in
+            Color.clear.preference(key: SettingsContentHeightKey.self, value: [tab: proxy.size.height])
+        })
+    }
 }
 
 // One shared selection layer moves between segments instead of replacing fills.
@@ -111,11 +139,28 @@ private struct SmoothSettingsSlider: View {
     let range: ClosedRange<Double>
     let step: Double
     let label: String
+    var defaultValue: Double? = nil
     @State private var dragging = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var fraction: CGFloat {
-        CGFloat(min(1, max(0, (value - range.lowerBound) / (range.upperBound - range.lowerBound))))
+    private var fraction: CGFloat { fraction(of: value) }
+
+    private func fraction(of v: Double) -> CGFloat {
+        CGFloat(min(1, max(0, (v - range.lowerBound) / (range.upperBound - range.lowerBound))))
+    }
+
+    private func snapped(_ raw: Double) -> Double {
+        let stepped = range.lowerBound + ((raw - range.lowerBound) / step).rounded() * step
+        return min(range.upperBound, max(range.lowerBound, stepped))
+    }
+
+    /// 拖动时就按档位跳，看到的值就是松手后的值；每跳一档轻震，落在默认值上换一种震感。
+    private func move(to raw: Double) {
+        let next = snapped(raw)
+        guard next != value else { return }
+        let pattern: NSHapticFeedbackManager.FeedbackPattern = next == defaultValue ? .alignment : .levelChange
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
+        withAnimation(reduceMotion ? nil : .easeOut(duration: dragging ? 0.08 : 0.2)) { value = next }
     }
 
     var body: some View {
@@ -124,6 +169,13 @@ private struct SmoothSettingsSlider: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.12)).frame(height: 4)
                 Capsule().fill(Color.primary).frame(width: 5 + travel * fraction, height: 4)
+                if let defaultValue {
+                    // 默认位置的小刻度，压在滑轨下方，不和填充色抢。
+                    Capsule()
+                        .fill(Color.primary.opacity(0.32))
+                        .frame(width: 1.5, height: 4)
+                        .offset(x: 5 + travel * fraction(of: defaultValue) - 0.75, y: 7)
+                }
                 Capsule()
                     .fill(.white)
                     .frame(width: 10, height: 18)
@@ -135,20 +187,16 @@ private struct SmoothSettingsSlider: View {
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { gesture in
                     let target = range.lowerBound + Double(min(1, max(0, (gesture.location.x - 5) / travel))) * (range.upperBound - range.lowerBound)
-                    if !dragging {
-                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { value = target }
-                        dragging = true
-                    } else {
-                        value = target
-                    }
+                    move(to: target)
+                    dragging = true
                 }
                 .onEnded { _ in
                     dragging = false
-                    let snapped = range.lowerBound + ((value - range.lowerBound) / step).rounded() * step
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                        value = min(range.upperBound, max(range.lowerBound, snapped))
-                    }
                 })
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                guard let defaultValue else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { value = defaultValue }
+            })
         }
         .frame(height: 20)
         .focusable(true)
@@ -254,13 +302,20 @@ struct SettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTab: SettingsTab
     @State private var hoveredTab: SettingsTab?
+    @State private var contentHeights: [SettingsTab: CGFloat] = [:]
     @FocusState private var focusedTab: SettingsTab?
     @Namespace private var sidebarSelection
     let onSelectTab: (SettingsTab) -> Void
+    let onContentHeight: (SettingsTab, CGFloat) -> Void
 
-    init(selectedTab: SettingsTab, onSelectTab: @escaping (SettingsTab) -> Void = { _ in }) {
+    init(
+        selectedTab: SettingsTab,
+        onSelectTab: @escaping (SettingsTab) -> Void = { _ in },
+        onContentHeight: @escaping (SettingsTab, CGFloat) -> Void = { _, _ in }
+    ) {
         _selectedTab = State(initialValue: selectedTab)
         self.onSelectTab = onSelectTab
+        self.onContentHeight = onContentHeight
     }
 
     var body: some View {
@@ -275,8 +330,20 @@ struct SettingsView: View {
                     .fill(SettingsDesign.hairline)
                     .frame(width: SettingsDesign.dividerWidth)
                     .accessibilityHidden(true)
-                settingsContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 内容按自然高度顶对齐；测得的高度交给窗口，窗口随之伸缩。
+                VStack(spacing: 0) {
+                    ZStack(alignment: .top) {
+                        settingsContent
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .onPreferenceChange(SettingsContentHeightKey.self) { heights in
+                    contentHeights.merge(heights) { $1 }
+                    if let height = heights[selectedTab] { onContentHeight(selectedTab, height) }
+                }
             }
 
             // A narrow, explicit window-drag strip. It occupies only the empty
@@ -287,7 +354,8 @@ struct SettingsView: View {
                 .accessibilityHidden(true)
         }
         .tint(.primary)
-        .frame(width: SettingsDesign.windowWidth, height: SettingsDesign.windowHeight)
+        .frame(width: SettingsDesign.windowWidth)
+        .frame(maxHeight: .infinity)
     }
 
     private var settingsSidebar: some View {
@@ -356,6 +424,11 @@ struct SettingsView: View {
                 .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
             }
             Spacer(minLength: 0)
+            Text("Dok \(SettingsDesign.versionText)")
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 10)
         }
         .padding(.horizontal, 12)
         .padding(.top, 24)
@@ -367,10 +440,12 @@ struct SettingsView: View {
     private func selectTab(_ tab: SettingsTab) {
         guard selectedTab != tab else { return }
         NotificationCenter.default.post(name: .hotkeyRecordingCancelled, object: nil)
+        // 已知新页面高度时，窗口与内容淡入淡出同时开始。
+        if let height = contentHeights[tab] { onContentHeight(tab, height) }
         if reduceMotion {
             selectedTab = tab
         } else {
-            withAnimation(SettingsDesign.standardMotion) { selectedTab = tab }
+            withAnimation(SettingsDesign.pageMotion) { selectedTab = tab }
         }
         onSelectTab(tab)
     }
@@ -381,9 +456,13 @@ struct SettingsView: View {
         case .apps:
             AppsSettingsView()
                 .environmentObject(appState)
+                .reportsContentHeight(for: .apps)
+                .transition(.opacity)
         case .general:
             GeneralSettingsView()
                 .environmentObject(appState)
+                .reportsContentHeight(for: .general)
+                .transition(.opacity)
         }
     }
 }
@@ -393,15 +472,23 @@ struct SettingsView: View {
 struct AppsSettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showingAppPicker = false
-    @State private var editingKeyAction: AppItem?
+    @State private var panel: ItemPanelMode?
+    @State private var addKind: AddKind = .app
+    /// 添加成功后换新 id，表单回到空白，可以接着添加下一个。
+    @State private var formID = UUID()
     @State private var selectedIndex: Int? = nil
     @State private var draggingIndex: Int? = nil
     @State private var dragTranslation: CGSize = .zero
     @State private var dragTargetIndex: Int? = nil
     @State private var isInDeleteZone: Bool = false
     @State private var removedItems: [RemovedWheelItem] = []
+    @State private var confirmingRestore = false
+    @State private var restoreHovered = false
+    @State private var restoreCollapseToken = UUID()
     @Namespace private var wheelItemAnimation
+
+    /// 原地确认无操作这么久后自动收起，等于取消。
+    private static let restoreConfirmTimeout: TimeInterval = 4
 
     private struct RemovedWheelItem {
         let item: AppItem
@@ -412,11 +499,13 @@ struct AppsSettingsView: View {
         reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.32)
     }
 
-    private let pieSize: CGFloat = 452
+    private let pieSize: CGFloat = 436
     private var previewMenuRadius: CGFloat { appState.settings.menuRadius }
     private var previewOuterDiameter: CGFloat { (previewMenuRadius + 50) * 2 }
+    /// 预览（轮盘 + 下方卫星）整体高度正好填满 pieSize，不在四周留死角。
+    private var previewAvailableHeight: CGFloat { pieSize - 8 }
     private var baseScale: CGFloat {
-        min((pieSize - 28) / previewOuterDiameter, 1.12)
+        min(previewAvailableHeight / previewOuterDiameter, 1.12)
     }
     private var previewRecentApps: [AppItem] {
         appState.recentContentForSettingsPreview()
@@ -424,9 +513,9 @@ struct AppsSettingsView: View {
     private var satelliteFitScale: CGFloat {
         let fixedSatelliteSpacing = RecentAppSatelliteGeometry.edgeGap
             + RecentAppSatelliteGeometry.glassPadding * 2
-        let scalableExtent = previewMenuRadius + 50
+        let scalableExtent = previewOuterDiameter
             + appState.settings.iconSize * RecentAppSatelliteGeometry.iconScale
-        return (pieSize / 2 - 4 - fixedSatelliteSpacing) / scalableExtent
+        return (previewAvailableHeight - fixedSatelliteSpacing) / scalableExtent
     }
     private var scale: CGFloat {
         previewRecentApps.isEmpty ? baseScale : min(baseScale, satelliteFitScale)
@@ -448,122 +537,178 @@ struct AppsSettingsView: View {
     }
 
     var body: some View {
-        Group {
-            if let item = editingKeyAction {
-                KeyActionEditor(appState: appState, item: item, onCancel: {
-                    editingKeyAction = nil
-                }, onSave: saveKeyAction)
-                .id(item.id)
-            } else {
-                HStack(alignment: .center, spacing: 8) {
-                    appsPreviewPane
-                    appsControlPane
-                }
-                .padding(.horizontal, 12)
-            }
+        HStack(alignment: .top, spacing: SettingsDesign.contentInset) {
+            appsPreviewPane
+            appsControlPane
         }
-        .padding(.vertical, 0)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .sheet(isPresented: $showingAppPicker) {
-            AppPickerView(appState: appState, isPresented: $showingAppPicker) {
-                removedItems.removeAll()
+        .padding(SettingsDesign.contentInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - 右侧面板：添加与编辑共用
+
+    private var isFull: Bool { appState.settings.apps.count >= maxSlots }
+
+    private func openPanel(_ mode: ItemPanelMode) {
+        formID = UUID()
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) { panel = mode }
+    }
+
+    private func closePanel() {
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) { panel = nil }
+    }
+
+    /// 只有网址和按键动作有可编辑的内容；其他类型右键里是替换。
+    private func openEditor(for item: AppItem) {
+        guard item.itemType == .webLink || item.itemType == .keyAction else { return }
+        openPanel(.edit(item.id))
+    }
+
+    private func append(_ item: AppItem) {
+        guard !isFull else { return }
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+            removedItems.removeAll()
+            appState.settings.apps.append(item)
+        }
+    }
+
+    private func itemPanel(_ mode: ItemPanelMode) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(panelTitle(mode))
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 0)
+                Button(Loc.string("panel.done"), action: closePanel)
+                    .buttonStyle(SettingsPillButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+            }
+            .frame(height: 24)
+
+            if mode == .add {
+                SmoothSegmentedControl(
+                    selection: $addKind,
+                    options: AddKind.allCases.map { ($0, Loc.string("add.kind.\($0.rawValue)")) },
+                    label: Loc.string("settings.add")
+                )
+                if isFull {
+                    Text(Loc.string("panel.full"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            panelContent(mode)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .padding(12)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .onChange(of: addKind) { _ in formID = UUID() }
+    }
+
+    private func panelTitle(_ mode: ItemPanelMode) -> String {
+        guard case .edit(let id) = mode,
+              let item = appState.settings.apps.first(where: { $0.id == id }) else {
+            return Loc.string("settings.add")
+        }
+        return Loc.string(item.itemType == .webLink ? "link.edit.title" : "keyAction.editTitle")
+    }
+
+    @ViewBuilder
+    private func panelContent(_ mode: ItemPanelMode) -> some View {
+        switch mode {
+        case .add:
+            switch addKind {
+            case .app:
+                AppListPanel(appState: appState, canAdd: !isFull) { append($0) }
+            case .file:
+                FileDropPanel(canAdd: !isFull, onAdd: addFiles, onChoose: chooseFiles)
+            case .link:
+                LinkForm(existing: nil, canAdd: !isFull) { address, name in
+                    saveWebLink(address: address, name: name, existing: nil)
+                }
+                .id(formID)
+            case .keyAction:
+                KeyActionEditor(
+                    appState: appState,
+                    item: AppItem(name: "", bundleIdentifier: "", path: "", itemType: .keyAction),
+                    canAdd: !isFull,
+                    onSave: saveKeyAction
+                )
+                .id(formID)
+            }
+        case .edit(let id):
+            if let item = appState.settings.apps.first(where: { $0.id == id }) {
+                if item.itemType == .webLink {
+                    LinkForm(existing: item) { address, name in
+                        saveWebLink(address: address, name: name, existing: item)
+                    }
+                    .id(item.id)
+                } else {
+                    KeyActionEditor(appState: appState, item: item, onSave: saveKeyAction)
+                        .id(item.id)
+                }
+            } else {
+                // 正在编辑的项目被移除了，面板随之收起。
+                Color.clear.onAppear(perform: closePanel)
             }
         }
     }
 
+    /// 编辑后收起面板；新建后表单清空，留在面板里可继续添加。
     private func saveKeyAction(_ result: AppItem) {
+        IconCache.shared.invalidate()
         if let index = appState.settings.apps.firstIndex(where: { $0.id == result.id }) {
             appState.settings.apps[index] = result
-        } else if appState.settings.apps.count < maxSlots {
-            removedItems.removeAll()
-            appState.settings.apps.append(result)
+            closePanel()
+        } else {
+            append(result)
+            formID = UUID()
         }
+    }
+
+    private func addFiles(_ urls: [URL]) {
+        for url in urls { append(fileSystemItem(for: url)) }
         IconCache.shared.invalidate()
-        editingKeyAction = nil
+    }
+
+    private func chooseFiles() {
+        guard !isFull else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.resolvesAliases = true
+        panel.prompt = Loc.string("openPanel.add")
+        panel.message = Loc.string("openPanel.message")
+        guard panel.runModal() == .OK else { return }
+        addFiles(Array(panel.urls.prefix(maxSlots - appState.settings.apps.count)))
     }
 
     // MARK: - 底部按钮
 
     private let maxSlots = AppState.maxSlots
 
-    private func addFileSystemItem(chooseFolder: Bool) {
-        guard appState.settings.apps.count < maxSlots else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = !chooseFolder
-        panel.canChooseDirectories = chooseFolder
-        panel.allowsMultipleSelection = false
-        panel.resolvesAliases = true
-        panel.prompt = Loc.string("openPanel.add")
-        panel.message = Loc.string(chooseFolder ? "openPanel.folder.message" : "openPanel.file.message")
-        if panel.runModal() == .OK, let url = panel.url {
-            let bookmarkData = try? url.bookmarkData(
-                options: [.withSecurityScope],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            let item = AppItem(
-                name: url.lastPathComponent,
-                bundleIdentifier: "",
-                path: url.path,
-                itemType: .fileOrFolder,
-                bookmarkData: bookmarkData,
-                customIconData: AppItem.persistentCustomIconData(for: url)
-            )
-            withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
-                removedItems.removeAll()
-                appState.settings.apps.append(item)
-            }
-            IconCache.shared.invalidate()
-        }
+    private func fileSystemItem(for url: URL) -> AppItem {
+        let bookmarkData = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        return AppItem(
+            name: url.lastPathComponent,
+            bundleIdentifier: "",
+            path: url.path,
+            itemType: .fileOrFolder,
+            bookmarkData: bookmarkData,
+            customIconData: AppItem.persistentCustomIconData(for: url)
+        )
     }
 
-    private func addWebLink() {
-        guard appState.settings.apps.count < maxSlots else { return }
-        editWebLink(nil)
-    }
+    /// 网址无效时返回 false，面板保持并提示。编辑后收起面板；新建后表单清空可继续添加。
+    private func saveWebLink(address: String, name: String, existing: AppItem?) -> Bool {
+        guard let url = AppItem.normalizedWebURL(from: address) else { return false }
 
-    private func editWebLink(_ existing: AppItem?) {
-        guard existing != nil || appState.settings.apps.count < maxSlots else { return }
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = Loc.string("link.placeholder")
-        field.stringValue = existing?.path ?? ""
-        let nameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        nameField.placeholderString = Loc.string("link.name.placeholder")
-        nameField.stringValue = existing?.name ?? ""
-        let accessory = NSStackView(views: [
-            NSTextField(labelWithString: Loc.string("link.address")), field,
-            NSTextField(labelWithString: Loc.string("link.name")), nameField,
-        ])
-        accessory.orientation = .vertical
-        accessory.alignment = .leading
-        accessory.spacing = 6
-        accessory.frame = NSRect(x: 0, y: 0, width: 320, height: 104)
-        for input in [field, nameField] {
-            input.widthAnchor.constraint(equalToConstant: 320).isActive = true
-        }
-
-        let alert = NSAlert()
-        alert.messageText = Loc.string(existing == nil ? "link.title" : "link.edit.title")
-        alert.informativeText = Loc.string("link.message")
-        alert.alertStyle = .informational
-        alert.accessoryView = accessory
-        alert.addButton(withTitle: Loc.string(existing == nil ? "link.add" : "link.save"))
-        alert.addButton(withTitle: Loc.string("link.cancel"))
-        alert.window.initialFirstResponder = field
-
-        var validatedURL: URL?
-        while validatedURL == nil {
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-            validatedURL = AppItem.normalizedWebURL(from: field.stringValue)
-            if validatedURL == nil {
-                alert.informativeText = Loc.string("link.invalid.message")
-                alert.window.initialFirstResponder = field
-            }
-        }
-        guard let url = validatedURL else { return }
-
-        let customName = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let customName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var item = AppItem(
             name: customName.isEmpty ? (url.host ?? url.absoluteString) : customName,
             bundleIdentifier: "",
@@ -578,34 +723,113 @@ struct AppsSettingsView: View {
         withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
             if let index = appState.settings.apps.firstIndex(where: { $0.id == item.id }) {
                 appState.settings.apps[index] = item
-            } else if existing == nil {
+            } else if existing == nil, !isFull {
                 removedItems.removeAll()
                 appState.settings.apps.append(item)
             }
         }
         if item.customIconData == nil { appState.refreshWebsiteIcon(for: item) }
+        if existing == nil { formID = UUID() } else { closePanel() }
+        return true
     }
 
-    private func restoreDefaultsWithConfirmation() {
-        let alert = NSAlert()
-        alert.messageText = Loc.string("settings.restoreDefaults.confirm.title")
-        alert.informativeText = Loc.string("settings.restoreDefaults.confirm.message")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Loc.string("settings.restoreDefaults.confirm.action"))
-        alert.addButton(withTitle: Loc.string("settings.restoreDefaults.confirm.cancel"))
+    // MARK: - 恢复默认：原地两步确认
 
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
+    private func beginRestoreConfirmation() {
         withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+            confirmingRestore = true
+        }
+        scheduleRestoreCollapse()
+    }
+
+    /// 4 秒无操作自动收起（不执行）。指针停在确认区时不收，移开后重新计时。
+    private func scheduleRestoreCollapse() {
+        let token = UUID()
+        restoreCollapseToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreConfirmTimeout) {
+            guard restoreCollapseToken == token, confirmingRestore, !restoreHovered else { return }
+            cancelRestoreConfirmation()
+        }
+    }
+
+    private func cancelRestoreConfirmation() {
+        restoreCollapseToken = UUID()
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+            confirmingRestore = false
+        }
+    }
+
+    private func restoreDefaults() {
+        restoreCollapseToken = UUID()
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+            confirmingRestore = false
             selectedIndex = nil
             removedItems.removeAll()
             appState.settings.apps = Array(AppState.defaultApps().prefix(maxSlots))
         }
     }
 
+    // MARK: - 预览图标右键
+
+    private func removeItem(at index: Int) {
+        guard index < appState.settings.apps.count else { return }
+        withAnimation(editAnimation) {
+            selectedIndex = nil
+            removedItems.append(RemovedWheelItem(item: appState.settings.apps[index], index: index))
+            appState.settings.apps.remove(at: index)
+        }
+    }
+
+    private func revealInFinder(_ item: AppItem) {
+        let url = item.itemType == .app ? URL(fileURLWithPath: item.path) : item.resolvedFileURL()
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    /// 用新选的应用或文件替换原位置的项目，位置不变。
+    private func replaceItem(at index: Int) {
+        guard index < appState.settings.apps.count else { return }
+        let old = appState.settings.apps[index]
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.resolvesAliases = true
+        panel.prompt = Loc.string("wheel.context.replace.prompt")
+        if old.itemType == .app {
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowedContentTypes = [.application]
+            panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        } else {
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = true
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let item: AppItem
+        if old.itemType == .app {
+            let name = FileManager.default.displayName(atPath: url.path)
+            item = AppItem(
+                name: name.hasSuffix(".app") ? String(name.dropLast(4)) : name,
+                bundleIdentifier: Bundle(url: url)?.bundleIdentifier ?? "",
+                path: url.path
+            )
+        } else {
+            item = fileSystemItem(for: url)
+        }
+        IconCache.shared.invalidate()
+        withAnimation(reduceMotion ? nil : SettingsDesign.standardMotion) {
+            guard index < appState.settings.apps.count,
+                  appState.settings.apps[index].id == old.id else { return }
+            appState.settings.apps[index] = item
+        }
+    }
+
     private var appsPreviewPane: some View {
         wheelStage
-            .frame(width: 475, height: 500, alignment: .center)
+            .frame(width: pieSize, height: pieSize)
+            // 布局只占轮盘实际宽度，多余的方形边角不挤占右侧。
+            .frame(width: wheelDiameter + 8, height: pieSize)
     }
 
     private var wheelStage: some View {
@@ -625,12 +849,64 @@ struct AppsSettingsView: View {
         }
     }
 
+    /// 右侧是一张与预览等高的长卡片：平时是总览（添加、最近内容，恢复默认固定在底部），
+    /// 添加或编辑时同一张卡片里换成面板。两栏顶边、底边对齐。
     private var appsControlPane: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            controlList
-            recentAppsControl
+        ZStack(alignment: .top) {
+            if let panel {
+                itemPanel(panel)
+                    .transition(.opacity)
+            } else {
+                overviewColumn
+                    .transition(.opacity)
+            }
         }
-        .frame(width: SettingsDesign.actionPaneWidth)
+        .frame(maxWidth: .infinity)
+        .frame(height: pieSize, alignment: .top)
+        .settingsInsetSurface()
+    }
+
+    private var overviewColumn: some View {
+        VStack(spacing: 0) {
+            actionTile(
+                Loc.string("settings.add"),
+                subtitle: Loc.string(isFull ? "settings.add.full" : "settings.add.subtitle"),
+                icon: "plus"
+            ) {
+                openPanel(.add)
+            }
+            .disabled(isFull)
+
+            sectionDivider
+
+            recentAppsControl
+
+            Spacer(minLength: 0)
+
+            sectionDivider
+
+            if confirmingRestore {
+                restoreConfirmation
+                    .transition(.opacity)
+            } else {
+                actionTile(
+                    Loc.string("settings.restoreDefaults"),
+                    subtitle: Loc.string("settings.restoreDefaults.subtitle"),
+                    icon: "arrow.counterclockwise",
+                    isDestructive: true
+                ) {
+                    beginRestoreConfirmation()
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(SettingsDesign.quietDivider)
+            .frame(height: SettingsDesign.dividerWidth)
+            .padding(.horizontal, 8)
     }
 
     private var recentAppsControl: some View {
@@ -652,81 +928,42 @@ struct AppsSettingsView: View {
             )
             .disabled(!appState.settings.showRecentApps)
         }
-        .padding(12)
-        .settingsInsetSurface()
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
     }
 
-    private var controlList: some View {
-        VStack(spacing: 0) {
-            actionTile(
-                Loc.string("settings.addApp"),
-                subtitle: Loc.string("settings.addApp.subtitle"),
-                icon: "plus.app"
-            ) {
-                showingAppPicker = true
+    /// 恢复默认的原地确认：按钮展开成说明 + 取消/恢复，只有点“恢复”才执行。
+    private var restoreConfirmation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 14, weight: .regular))
+                    .frame(width: 30, height: 30)
+                    .background(SettingsDesign.emphasizedSurface,
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(Loc.string("settings.restoreDefaults.confirm.title"))
+                        .font(.system(size: 13, weight: .medium))
+                    Text(Loc.string("settings.restoreDefaults.inline"))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
             }
-            .disabled(appState.settings.apps.count >= maxSlots)
-
-            quietActionDivider
-
-            actionTile(
-                Loc.string("settings.addFolder"),
-                subtitle: Loc.string("settings.addFolder.subtitle"),
-                icon: "folder.badge.plus"
-            ) {
-                addFileSystemItem(chooseFolder: true)
-            }
-
-            quietActionDivider
-
-            actionTile(
-                Loc.string("settings.addFile"),
-                subtitle: Loc.string("settings.addFile.subtitle"),
-                icon: "doc.badge.plus"
-            ) {
-                addFileSystemItem(chooseFolder: false)
-            }
-
-            quietActionDivider
-
-            actionTile(
-                Loc.string("settings.addLink"),
-                subtitle: Loc.string("settings.addLink.subtitle"),
-                icon: "link.badge.plus"
-            ) {
-                addWebLink()
-            }
-
-            quietActionDivider
-
-            actionTile(
-                Loc.string("settings.addKeyAction"),
-                subtitle: Loc.string("settings.addKeyAction.subtitle"),
-                icon: "keyboard"
-            ) {
-                editingKeyAction = AppItem(name: "", bundleIdentifier: "", path: "", itemType: .keyAction)
-            }
-            .disabled(appState.settings.apps.count >= maxSlots)
-
-            quietActionDivider
-
-            actionTile(
-                Loc.string("settings.restoreDefaults"),
-                subtitle: Loc.string("settings.restoreDefaults.subtitle"),
-                icon: "arrow.counterclockwise",
-                isDestructive: true
-            ) {
-                restoreDefaultsWithConfirmation()
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                Button(Loc.string("settings.restoreDefaults.confirm.cancel"), action: cancelRestoreConfirmation)
+                    .buttonStyle(SettingsPillButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button(Loc.string("settings.restoreDefaults.confirm.action"), action: restoreDefaults)
+                    .buttonStyle(SettingsPillButtonStyle(prominent: true))
             }
         }
-        .settingsInsetSurface()
-    }
-
-    private var quietActionDivider: some View {
-        Rectangle()
-            .fill(SettingsDesign.quietDivider)
-            .frame(height: SettingsDesign.dividerWidth)
-            .padding(.leading, 42)
+        .padding(8)
+        .onHover { inside in
+            restoreHovered = inside
+            if !inside { scheduleRestoreCollapse() }
+        }
     }
 
     private func actionTile(
@@ -734,6 +971,7 @@ struct AppsSettingsView: View {
         subtitle: String,
         icon: String,
         isDestructive: Bool = false,
+        trailingIcon: String = "chevron.right",
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -757,7 +995,7 @@ struct AppsSettingsView: View {
                 }
 
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
+                Image(systemName: trailingIcon)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
@@ -826,12 +1064,12 @@ struct AppsSettingsView: View {
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     if item.itemType == .keyAction {
-                        Button(item.keyCombination?.displayString ?? Loc.string("keyAction.record")) { editingKeyAction = item }
+                        Button(item.keyCombination?.displayString ?? Loc.string("keyAction.record")) { openEditor(for: item) }
                             .buttonStyle(.plain)
                             .font(.system(size: 10, weight: .medium))
                     }
                     if item.itemType == .webLink {
-                        Button(Loc.string("link.edit.title")) { editWebLink(item) }
+                        Button(Loc.string("link.edit.title")) { openEditor(for: item) }
                             .buttonStyle(.plain)
                             .font(.system(size: 10, weight: .medium))
                             .padding(.horizontal, 9)
@@ -959,14 +1197,6 @@ struct AppsSettingsView: View {
                     )
                 )
 
-            Image(systemName: "clock.fill")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.72))
-                .frame(width: 15, height: 15)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.32), lineWidth: 0.5))
-                .offset(x: baseDiameter * 0.31, y: baseDiameter * 0.31)
-
             if app.isRunning {
                 Circle()
                     .fill(.primary)
@@ -1038,11 +1268,17 @@ struct AppsSettingsView: View {
         }
         .contextMenu {
             if app.itemType == .keyAction {
-                Button(Loc.string("keyAction.title")) { editingKeyAction = app }
+                Button(Loc.string("keyAction.title")) { openEditor(for: app) }
             }
             if app.itemType == .webLink {
-                Button(Loc.string("link.edit.title")) { editWebLink(app) }
+                Button(Loc.string("link.edit.title")) { openEditor(for: app) }
             }
+            if app.itemType == .app || app.itemType == .fileOrFolder {
+                Button(Loc.string("wheel.context.replace")) { replaceItem(at: index) }
+                Button(Loc.string("wheel.context.reveal")) { revealInFinder(app) }
+            }
+            Divider()
+            Button(Loc.string("wheel.context.remove")) { removeItem(at: index) }
         }
     }
 
@@ -1144,108 +1380,6 @@ struct AppsSettingsView: View {
 
 // MARK: - 应用选择器
 
-struct AppPickerView: View {
-    let appState: AppState
-    @Binding var isPresented: Bool
-    var onAdd: () -> Void = {}
-    @State private var searchText = ""
-    @State private var installedApps: [AppItem] = []
-    @State private var recentlyAdded: Set<String> = []
-
-    var filteredApps: [AppItem] {
-        let existing = Set(appState.settings.apps.map { $0.bundleIdentifier })
-        let available = installedApps.filter { !existing.contains($0.bundleIdentifier) }
-
-        if searchText.isEmpty {
-            return available
-        }
-        return available.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            $0.displayName.localizedCaseInsensitiveContains(searchText) ||
-            $0.bundleIdentifier.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text(Loc.string("appPicker.title"))
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button(Loc.string("appPicker.done")) { isPresented = false }
-                    .font(.system(size: 13, weight: .medium))
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .frame(height: 30)
-                    .settingsInsetSurface(emphasized: true)
-                    .keyboardShortcut(.defaultAction)
-            }
-
-            SearchField(text: $searchText, placeholder: Loc.string("appPicker.search"))
-
-            List(filteredApps) { app in
-                let justAdded = recentlyAdded.contains(app.bundleIdentifier)
-                HStack(spacing: 12) {
-                    Image(nsImage: app.icon)
-                        .resizable()
-                        .frame(width: 30, height: 30)
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(app.displayName)
-                            .font(.system(size: 13))
-                        if app.displayName != app.name {
-                            Text(app.name)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-
-                    Spacer()
-
-                    if justAdded {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.primary)
-                            .transition(.opacity)
-                    } else {
-                        Button(action: { addApp(app) }) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 16))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(.primary)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(appState.settings.apps.count >= AppState.maxSlots)
-                    }
-                }
-                .frame(height: SettingsDesign.rowHeight)
-            }
-            .listStyle(.plain)
-        }
-        .padding(16)
-        .frame(width: 420, height: 500)
-        .onAppear {
-            installedApps = AppState.installedApps()
-        }
-    }
-
-    func addApp(_ app: AppItem) {
-        guard appState.settings.apps.count < AppState.maxSlots else { return }
-        withAnimation(SettingsDesign.standardMotion) {
-            onAdd()
-            appState.settings.apps.append(app)
-            recentlyAdded.insert(app.bundleIdentifier)
-        }
-        // 短暂显示勾后从列表移除
-        let bid = app.bundleIdentifier
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            withAnimation(.easeOut(duration: 0.25)) {
-                _ = recentlyAdded.remove(bid)
-            }
-        }
-    }
-}
-
 /// Own the NSTextInputClient instead of borrowing a sheet's shared field editor.
 private final class KeyActionNameTextView: NSTextView {
     var attached: ((KeyActionNameTextView) -> Void)?
@@ -1287,14 +1421,14 @@ private final class KeyActionNameTextView: NSTextView {
 
 private struct KeyActionNameInput: NSViewRepresentable {
     @Binding var text: String
+    var onSubmit: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
-        scroll.borderType = .bezelBorder
+        scroll.borderType = .noBorder
         scroll.hasVerticalScroller = false
         scroll.hasHorizontalScroller = false
-        scroll.drawsBackground = true
-        scroll.backgroundColor = .textBackgroundColor
+        scroll.drawsBackground = false
         let view = KeyActionNameTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 24))
         view.isEditable = true
         view.isSelectable = true
@@ -1305,8 +1439,8 @@ private struct KeyActionNameInput: NSViewRepresentable {
         view.font = .systemFont(ofSize: 13)
         view.textColor = .textColor
         view.insertionPointColor = .labelColor
-        view.backgroundColor = .textBackgroundColor
-        view.textContainerInset = NSSize(width: 5, height: 4)
+        view.drawsBackground = false
+        view.textContainerInset = NSSize(width: 8, height: 5)
         view.textContainer?.lineFragmentPadding = 0
         view.textContainer?.maximumNumberOfLines = 1
         view.textContainer?.widthTracksTextView = false
@@ -1345,7 +1479,7 @@ private struct KeyActionNameInput: NSViewRepresentable {
             parent.text = view.string
         }
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) { return true }
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) { parent.onSubmit?(); return true }
             if commandSelector == #selector(NSResponder.insertTab(_:)) {
                 textView.window?.selectNextKeyView(textView); return true
             }
@@ -1372,17 +1506,25 @@ private struct KeyActionNameInput: NSViewRepresentable {
     }
 }
 
+/// 透明的原生录入控件铺在键帽区上：它负责焦点、事件拦截与生命周期，外观全由 SwiftUI 绘制。
 private struct KeyActionRecorderInput: NSViewRepresentable {
     @Binding var value: HotkeyConfig?
     @Binding var recording: Bool
-    func makeNSView(context: Context) -> KeyActionRecorderControl { KeyActionRecorderControl(frame: .zero) }
+    @Binding var status: String?
+    func makeNSView(context: Context) -> KeyActionRecorderControl {
+        let control = KeyActionRecorderControl(frame: .zero)
+        control.drawsChrome = false
+        return control
+    }
     func updateNSView(_ control: KeyActionRecorderControl, context: Context) {
         control.value = value
         control.onChange = { value = $0 }
         control.onRecordingChanged = { recording = $0 }
+        control.onStatusChanged = { status = $0 }
     }
     static func dismantleNSView(_ control: KeyActionRecorderControl, coordinator: ()) {
         control.onRecordingChanged = nil
+        control.onStatusChanged = nil
         control.onChange = nil
         control.stop(reason: "editor-dismissed")
     }
@@ -1391,68 +1533,221 @@ private struct KeyActionRecorderInput: NSViewRepresentable {
 private struct KeyActionEditor: View {
     @ObservedObject var appState: AppState
     var item: AppItem
-    var onCancel: () -> Void
+    var canAdd: Bool = true
     var onSave: (AppItem) -> Void
     @State private var name = ""
     @State private var combo: HotkeyConfig?
     @State private var recording = false
+    @State private var recorderStatus: String?
     @State private var targetBundle = ""
     @State private var targetName = ""
+    @State private var targetMenuAnchor = MenuAnchorHolder()
+    @State private var breathing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var conflict: Bool { combo == appState.settings.hotkey }
+    private var canSave: Bool { canAdd && !recording && combo != nil && !conflict }
+    private var isEditing: Bool { item.keyCombination != nil }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(Loc.string("keyAction.title")).font(.headline)
-            KeyActionNameInput(text: $name)
-                .frame(height: 30)
-            HStack {
-                Text(Loc.string("keyAction.combination"))
-                Spacer()
-                KeyActionRecorderInput(value: $combo, recording: $recording)
-                    .frame(width: 190, height: 28)
-            }
-            Text(Loc.string(conflict ? "keyAction.conflict" : "keyAction.hint"))
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Text(Loc.string("keyAction.target"))
-                Spacer()
-                Button(targetBundle.isEmpty ? Loc.string("keyAction.currentApp") : targetName) { chooseTarget() }
-                if !targetBundle.isEmpty {
-                    Button(Loc.string("keyAction.clearTarget")) { targetBundle = ""; targetName = "" }
+        VStack(alignment: .leading, spacing: 12) {
+            comboStage
+
+            VStack(spacing: 0) {
+                SettingRow(title: Loc.string("keyAction.nameLabel"), accessoryWidth: 150) {
+                    KeyActionNameInput(text: $name, onSubmit: save)
+                        .frame(height: 26)
+                        .settingsInsetSurface()
+                }
+
+                SettingDivider()
+
+                SettingRow(title: Loc.string("keyAction.target"), accessoryWidth: 150) {
+                    targetButton
+                }
+
+                if !AXIsProcessTrusted() {
+                    SettingDivider()
+                    HStack(spacing: 8) {
+                        Text(Loc.string("keyAction.permission"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button(Loc.string("keyAction.openAccessibilityShort")) {
+                            KeyActionService.openAccessibility()
+                        }
+                        .buttonStyle(SettingsPillButtonStyle())
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: SettingsDesign.rowHeight)
                 }
             }
-            Text(Loc.string("keyAction.targetHint")).font(.caption).foregroundStyle(.secondary)
-            if !AXIsProcessTrusted() {
-                Text(Loc.string("keyAction.permission")).font(.caption).foregroundStyle(.secondary)
-                Button(Loc.string("keyAction.openAccessibility")) {
-                    KeyActionService.openAccessibility()
-                }
-            }
+            .settingsInsetSurface()
+
+            Text(Loc.string("keyAction.footnote"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+
             HStack {
-                Button(Loc.string("link.cancel"), action: onCancel)
-                Spacer()
-                Button(Loc.string("link.save")) {
-                    var result = item
-                    result.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    result.keyCombination = combo
-                    result.bundleIdentifier = targetBundle
-                    result.path = ""
-                    onSave(result)
-                }
-                .disabled(recording || combo == nil || conflict || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Spacer(minLength: 0)
+                Button(Loc.string(isEditing ? "link.save" : "link.add"), action: save)
+                    .buttonStyle(SettingsPillButtonStyle(prominent: true))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSave)
             }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .tint(.primary)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear {
             name = item.name
             combo = item.keyCombination
             targetBundle = item.bundleIdentifier
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: targetBundle) {
-                targetName = FileManager.default.displayName(atPath: url.path)
+                targetName = Self.displayName(of: url)
             } else { targetName = targetBundle }
         }
+        .onChange(of: recording) { isRecording in
+            if !isRecording { recorderStatus = nil }
+            breathing = false
+            if isRecording && !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { breathing = true }
+            }
+        }
+    }
+
+    // MARK: 组合键
+
+    /// 页面的主角：组合键以大号键帽显示；整块可点，点击开始录入，再点或按 Esc 取消。
+    private var comboStage: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                if recording {
+                    Text(recorderStatus ?? Loc.string("keyAction.recording"))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                } else if let combo {
+                    HStack(spacing: 6) {
+                        ForEach(Array(Self.symbols(of: combo).enumerated()), id: \.offset) { _, symbol in
+                            LargeKeyCap(text: symbol)
+                        }
+                    }
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
+                } else {
+                    Label(Loc.string("keyAction.recordPrompt"), systemImage: "keyboard")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 76)
+            .settingsInsetSurface(emphasized: recording)
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsDesign.surfaceRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(stageBorderOpacity),
+                                  style: StrokeStyle(lineWidth: 1, dash: combo == nil && !recording ? [4, 3] : []))
+            )
+            .overlay(
+                KeyActionRecorderInput(value: $combo, recording: $recording, status: $recorderStatus)
+            )
+            .animation(reduceMotion ? nil : SettingsDesign.standardMotion, value: recording)
+            .animation(reduceMotion ? nil : SettingsDesign.standardMotion, value: combo)
+
+            Text(stageCaption)
+                .font(.system(size: 11))
+                .foregroundStyle(conflict ? .primary : .tertiary)
+        }
+    }
+
+    private var stageBorderOpacity: Double {
+        if recording { return breathing ? 0.45 : 0.15 }
+        if conflict { return 0.5 }
+        return combo == nil ? 0.18 : 0
+    }
+
+    private var stageCaption: String {
+        if conflict { return Loc.string("keyAction.conflict") }
+        if recording { return Loc.string("keyAction.recordingCaption") }
+        return Loc.string(combo == nil ? "keyAction.recordCaption" : "keyAction.rerecordCaption")
+    }
+
+    static func symbols(of combo: HotkeyConfig) -> [String] { combo.keySymbols }
+
+    // MARK: 目标应用
+
+    private var targetButton: some View {
+        Button(action: showTargetMenu) {
+            HStack(spacing: 6) {
+                if let icon = targetIcon {
+                    Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                }
+                Text(targetBundle.isEmpty ? Loc.string("keyAction.noSwitch") : targetName)
+                    .font(.system(size: 12.5))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .settingsInsetSurface()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(MenuAnchor(holder: targetMenuAnchor))
+    }
+
+    private var targetIcon: NSImage? {
+        guard !targetBundle.isEmpty,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: targetBundle) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    /// 不切换 / 正在运行的应用 / 选择其他应用…，用原生菜单，不再弹出访达。
+    private func showTargetMenu() {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let none = ClosureMenuItem(title: Loc.string("keyAction.noSwitch"), symbol: "arrow.uturn.right", enabled: true) {
+            targetBundle = ""
+            targetName = ""
+        }
+        none.state = targetBundle.isEmpty ? .on : .off
+        menu.addItem(none)
+
+        let running = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil
+                && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
+            .sorted { ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "") == .orderedAscending }
+        if !running.isEmpty {
+            menu.addItem(.separator())
+            let header = NSMenuItem(title: Loc.string("keyAction.runningApps"), action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for app in running {
+                guard let bundle = app.bundleIdentifier else { continue }
+                let name = app.localizedName ?? bundle
+                let entry = ClosureMenuItem(title: name, symbol: "app", enabled: true) {
+                    targetBundle = bundle
+                    targetName = name
+                }
+                if let icon = app.icon?.copy() as? NSImage {
+                    icon.size = NSSize(width: 16, height: 16)
+                    entry.image = icon
+                }
+                entry.state = bundle == targetBundle ? .on : .off
+                menu.addItem(entry)
+            }
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: Loc.string("keyAction.chooseOther"), symbol: "folder", enabled: true) {
+            DispatchQueue.main.async(execute: chooseTarget)
+        })
+        targetMenuAnchor.popUp(menu)
     }
 
     private func chooseTarget() {
@@ -1465,10 +1760,54 @@ private struct KeyActionEditor: View {
            let bundle = Bundle(url: url)?.bundleIdentifier,
            bundle != Bundle.main.bundleIdentifier {
             targetBundle = bundle
-            targetName = FileManager.default.displayName(atPath: url.path)
+            targetName = Self.displayName(of: url)
         }
     }
 
+    private static func displayName(of url: URL) -> String {
+        let name = FileManager.default.displayName(atPath: url.path)
+        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+    }
+
+    // MARK: 保存
+
+    /// 名称选填：留空时用“目标应用 + 组合键”命名，没有目标应用就只用组合键。
+    private func save() {
+        guard canSave, let combo else { return }
+        var result = item
+        let typed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        result.name = typed.isEmpty
+            ? (targetBundle.isEmpty ? combo.displayString : "\(targetName) \(combo.displayString)")
+            : typed
+        result.keyCombination = combo
+        result.bundleIdentifier = targetBundle
+        result.path = ""
+        onSave(result)
+    }
+}
+
+/// 组合键展示用的大号键帽：单色浅底、细描边，底边略深模拟键帽厚度。
+private struct LargeKeyCap: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 17, weight: .medium, design: .rounded))
+            .frame(minWidth: 36, minHeight: 36)
+            .padding(.horizontal, 6)
+            .background(SettingsDesign.emphasizedSurface,
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+            )
+            .overlay(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(height: 3)
+                    .padding(.horizontal, 2)
+            }
+    }
 }
 
 // MARK: - 通用设置
@@ -1550,6 +1889,7 @@ private struct AccessibilityPermissionRow: View {
 
 private struct SettingRow<Accessory: View>: View {
     let title: String
+    var accessoryWidth: CGFloat = SettingsDesign.controlWidth
     @ViewBuilder var accessory: Accessory
 
     var body: some View {
@@ -1561,11 +1901,301 @@ private struct SettingRow<Accessory: View>: View {
             Spacer(minLength: 8)
             accessory
                 .controlSize(.small)
-                .frame(width: SettingsDesign.controlWidth, alignment: .trailing)
+                .frame(width: accessoryWidth, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .frame(height: SettingsDesign.rowHeight)
     }
+}
+
+/// 设置页内的胶囊按钮：次要为浅底，主要为实心反色，与分段控件的选中态一致。
+private struct SettingsPillButtonStyle: ButtonStyle {
+    var prominent = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        PillLabel(configuration: configuration, prominent: prominent)
+    }
+
+    private struct PillLabel: View {
+        let configuration: ButtonStyle.Configuration
+        let prominent: Bool
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 12, weight: prominent ? .semibold : .medium))
+                .foregroundStyle(prominent ? (colorScheme == .dark ? Color.black : Color.white) : Color.primary)
+                .padding(.horizontal, 12)
+                .frame(height: 24)
+                .background(prominent ? Color.primary : Color.primary.opacity(0.08), in: Capsule())
+                .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+                .contentShape(Capsule())
+        }
+    }
+}
+
+/// 右侧面板的添加类型。文件与文件夹同一种添加方式，合为一类。
+private enum AddKind: String, CaseIterable {
+    case app, file, link, keyAction
+}
+
+/// 右侧一列在“添加”与“编辑某一项”时变成同一个面板，左侧预览始终可见。
+private enum ItemPanelMode: Equatable {
+    case add
+    case edit(UUID)
+}
+
+/// 面板里的应用列表：搜索 + 点一下加入，可连续添加；已在轮盘里的打勾。
+private struct AppListPanel: View {
+    @ObservedObject var appState: AppState
+    var canAdd: Bool
+    var onAdd: (AppItem) -> Void
+    @State private var search = ""
+    @State private var apps: [AppItem] = []
+    @State private var hovered: String?
+
+    private var addedBundles: Set<String> {
+        Set(appState.settings.apps.filter { $0.itemType == .app }.map(\.bundleIdentifier))
+    }
+
+    private var filtered: [AppItem] {
+        guard !search.isEmpty else { return apps }
+        return apps.filter {
+            $0.name.localizedCaseInsensitiveContains(search)
+                || $0.displayName.localizedCaseInsensitiveContains(search)
+                || $0.bundleIdentifier.localizedCaseInsensitiveContains(search)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                SearchField(text: $search, placeholder: Loc.string("appPicker.search"))
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 28)
+            .settingsInsetSurface()
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(filtered) { app in
+                        row(app, added: addedBundles.contains(app.bundleIdentifier))
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .settingsInsetSurface()
+        }
+        .onAppear {
+            if apps.isEmpty { apps = AppState.installedApps() }
+        }
+    }
+
+    private func row(_ app: AppItem, added: Bool) -> some View {
+        Button { onAdd(app) } label: {
+            HStack(spacing: 8) {
+                Image(nsImage: app.icon)
+                    .resizable()
+                    .frame(width: 22, height: 22)
+                Text(app.displayName)
+                    .font(.system(size: 12.5))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: added ? "checkmark" : "plus")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(added ? .tertiary : .secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hovered == app.bundleIdentifier && !added ? SettingsDesign.hoverSurface : .clear)
+                    .padding(.horizontal, 4)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(added || !canAdd)
+        .opacity(added ? 0.55 : 1)
+        .onHover { inside in
+            if inside { hovered = app.bundleIdentifier } else if hovered == app.bundleIdentifier { hovered = nil }
+        }
+    }
+}
+
+/// 面板里的文件区：拖入文件或文件夹即加入，也可以点“选择”。
+private struct FileDropPanel: View {
+    var canAdd: Bool
+    var onAdd: ([URL]) -> Void
+    var onChoose: () -> Void
+    @State private var targeted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 12) {
+            VStack(spacing: 8) {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(.secondary)
+                Text(Loc.string("panel.dropTitle"))
+                    .font(.system(size: 13, weight: .medium))
+                Text(Loc.string("panel.dropHint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 168)
+            .settingsInsetSurface(emphasized: targeted)
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsDesign.surfaceRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(targeted ? 0.45 : 0.18),
+                                  style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            )
+            .animation(reduceMotion ? nil : SettingsDesign.quickMotion, value: targeted)
+            .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
+                guard canAdd else { return false }
+                for provider in providers {
+                    _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                        guard let url else { return }
+                        DispatchQueue.main.async { onAdd([url]) }
+                    }
+                }
+                return true
+            }
+
+            HStack {
+                Spacer(minLength: 0)
+                Button(Loc.string("panel.choose"), action: onChoose)
+                    .buttonStyle(SettingsPillButtonStyle(prominent: true))
+                    .disabled(!canAdd)
+            }
+        }
+    }
+}
+
+/// 网址表单：添加与编辑共用。网址无效时原地提示；回车提交。
+private struct LinkForm: View {
+    let existing: AppItem?
+    var canAdd: Bool = true
+    let onSave: (String, String) -> Bool
+
+    @State private var address: String
+    @State private var name: String
+    @State private var invalid = false
+    @FocusState private var focus: Field?
+
+    private enum Field { case address, name }
+
+    init(existing: AppItem?, canAdd: Bool = true, onSave: @escaping (String, String) -> Bool) {
+        self.existing = existing
+        self.canAdd = canAdd
+        self.onSave = onSave
+        _address = State(initialValue: existing?.path ?? "")
+        _name = State(initialValue: existing?.name ?? "")
+    }
+
+    private var canSubmit: Bool {
+        canAdd && !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(Loc.string(invalid ? "link.invalid.message" : "link.message"))
+                .font(.system(size: 11))
+                .foregroundStyle(invalid ? .primary : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            field(Loc.string("link.address"), text: $address,
+                  placeholder: Loc.string("link.placeholder"), id: .address)
+            field(Loc.string("link.name"), text: $name,
+                  placeholder: Loc.string("link.name.placeholder"), id: .name)
+
+            HStack {
+                Spacer(minLength: 0)
+                Button(Loc.string(existing == nil ? "link.add" : "link.save"), action: submit)
+                    .buttonStyle(SettingsPillButtonStyle(prominent: true))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSubmit)
+            }
+        }
+        .onAppear { focus = .address }
+        .onChange(of: address) { _ in invalid = false }
+    }
+
+    private func field(_ label: String, text: Binding<String>, placeholder: String, id: Field) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .focused($focus, equals: id)
+                .onSubmit(submit)
+                .padding(.horizontal, 9)
+                .frame(height: 28)
+                .settingsInsetSurface(emphasized: focus == id)
+                .overlay(
+                    RoundedRectangle(cornerRadius: SettingsDesign.surfaceRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(id == .address && invalid ? 0.5 : 0),
+                                      lineWidth: 1)
+                )
+        }
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        if !onSave(address, name) {
+            invalid = true
+            focus = .address
+        }
+    }
+}
+
+/// 记住某个视图对应的 NSView，用于在它正下方弹出原生菜单。
+private final class MenuAnchorHolder {
+    weak var view: NSView?
+
+    func popUp(_ menu: NSMenu) {
+        guard let view else { return }
+        let y = view.isFlipped ? view.bounds.height + 4 : -4
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: y), in: view)
+    }
+}
+
+private struct MenuAnchor: NSViewRepresentable {
+    let holder: MenuAnchorHolder
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        holder.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        holder.view = view
+    }
+}
+
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, symbol: String, enabled: Bool, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        isEnabled = enabled
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    @objc private func fire() { handler() }
 }
 
 private struct SettingDivider: View {
@@ -1579,7 +2209,8 @@ private struct SettingDivider: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appState: AppState
-    @State private var launchAtLogin = false
+    /// 创建视图时就读取真实状态：若出现后再赋值，开关会播一次切换动画，还会多触发一次注册。
+    @State private var launchAtLogin = Self.isLaunchAtLoginEnabled()
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsDesign.sectionSpacing) {
@@ -1597,11 +2228,9 @@ struct GeneralSettingsView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(width: SettingsDesign.generalContentWidth)
+        .toggleStyle(SmoothSettingsSwitch())
         .padding(SettingsDesign.contentInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            launchAtLogin = getLaunchAtLogin()
-        }
     }
 
     private var triggerGroup: some View {
@@ -1688,7 +2317,8 @@ struct GeneralSettingsView: View {
                 title: Loc.string("settings.radius"),
                 value: $appState.settings.menuRadius,
                 range: 100...180,
-                step: 10
+                step: 5,
+                defaultValue: AppSettings.defaultMenuRadius
             )
 
             SettingDivider()
@@ -1697,23 +2327,21 @@ struct GeneralSettingsView: View {
                 title: Loc.string("settings.icon"),
                 value: $appState.settings.iconSize,
                 range: 32...64,
-                step: 4
+                step: 2,
+                defaultValue: AppSettings.defaultIconSize
             )
 
-            SettingDivider()
+            // macOS 27 起玻璃由系统 Liquid Glass 决定，没有可调项，整行不显示。
+            if #unavailable(macOS 27.0) {
+                SettingDivider()
 
-            if #available(macOS 27.0, *) {
-                SettingRow(title: "Liquid Glass") {
-                    Text(Loc.string("settings.glass.followsSystem"))
-                        .foregroundStyle(.secondary)
-                }
-            } else {
                 compactSlider(
                     title: Loc.string("settings.opacity"),
                     value: $appState.settings.menuOpacity,
                     range: 0.15...1.0,
                     step: 0.05,
-                    percentage: true
+                    percentage: true,
+                    defaultValue: AppSettings.defaultMenuOpacity
                 )
             }
         }
@@ -1725,6 +2353,7 @@ struct GeneralSettingsView: View {
                 Toggle("", isOn: $launchAtLogin)
                     .labelsHidden()
                     .onChange(of: launchAtLogin) { newValue in
+                        guard newValue != Self.isLaunchAtLoginEnabled() else { return }
                         setLaunchAtLogin(newValue)
                     }
             }
@@ -1745,6 +2374,7 @@ struct GeneralSettingsView: View {
                 Toggle("", isOn: $appState.settings.showNotificationBadges)
                     .labelsHidden()
             }
+
         }
         .frame(maxWidth: .infinity)
     }
@@ -1773,22 +2403,26 @@ struct GeneralSettingsView: View {
         value: Binding<Double>,
         range: ClosedRange<Double>,
         step: Double,
-        percentage: Bool = false
+        percentage: Bool = false,
+        defaultValue: Double? = nil
     ) -> some View {
         SettingRow(title: title) {
             VStack(spacing: 2) {
                 HStack {
                     Spacer(minLength: 0)
                     Text(percentage ? "\(Int(round(value.wrappedValue * 100)))%" : "\(Int(value.wrappedValue))")
-                        .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                        .font(.system(size: 11.5, weight: .regular).monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .frame(width: 36, alignment: .trailing)
                 }
-                SmoothSettingsSlider(value: value, range: range, step: step, label: title)
+                SmoothSettingsSlider(value: value, range: range, step: step, label: title,
+                                     defaultValue: defaultValue)
             }
         }
+        .help(defaultValue == nil ? "" : Loc.string("settings.slider.resetHint"))
     }
 
-    func getLaunchAtLogin() -> Bool {
+    static func isLaunchAtLoginEnabled() -> Bool {
         if #available(macOS 13.0, *) {
             return SMAppService.mainApp.status == .enabled
         }
@@ -1964,6 +2598,13 @@ struct SearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = AppPickerSearchField()
+        field.isBezeled = false
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13)
+        // 放大镜由 SwiftUI 画在框外侧；无边框时系统自带的放大镜会压在文字上。
+        (field.cell as? NSSearchFieldCell)?.searchButtonCell = nil
         field.placeholderString = placeholder
         field.delegate = context.coordinator
         field.isEditable = true

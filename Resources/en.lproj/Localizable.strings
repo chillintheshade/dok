@@ -23,8 +23,6 @@
 "onboarding.openAccessibility" = "Open Accessibility Settings";
 
 "openPanel.add" = "Add";
-"openPanel.folder.message" = "Choose a folder to add to the wheel";
-"openPanel.file.message" = "Choose a file to add to the wheel";
 
 "link.title" = "Add Website";
 "link.message" = "Enter a website address. Dok will open it in your default browser.";
@@ -38,21 +36,11 @@
 "link.save" = "Save";
 "wheel.undoRemoval" = "Undo";
 "wheel.undoFull" = "Remove a slot to restore this item";
-"link.invalid.title" = "Invalid Website Address";
 "link.invalid.message" = "Enter a valid http or https address.";
 
-"settings.addApp" = "Add App";
-"settings.addApp.subtitle" = "Choose from Applications";
-"settings.addFolder" = "Add Folder";
-"settings.addFolder.subtitle" = "Choose a folder";
-"settings.addFile" = "Add File";
-"settings.addFile.subtitle" = "Choose a document or file";
-"settings.addLink" = "Add Website";
-"settings.addLink.subtitle" = "Open in your default browser";
 "settings.restoreDefaults" = "Restore Defaults";
 "settings.restoreDefaults.subtitle" = "Bring back common system items";
 "settings.restoreDefaults.confirm.title" = "Restore the Default Wheel?";
-"settings.restoreDefaults.confirm.message" = "The apps, files, folders, websites, and keyboard actions currently on the wheel will be replaced with common system items. This cannot be undone.";
 "settings.restoreDefaults.confirm.action" = "Restore Defaults";
 "settings.restoreDefaults.confirm.cancel" = "Cancel";
 "settings.recentApps" = "Recent Content";
@@ -65,9 +53,7 @@
 "wheel.dragToCenterDelete" = "Drop in Center to Delete";
 "wheel.quitRunningApp" = "Quit";
 
-"appPicker.title" = "Add App";
-"appPicker.done" = "Done";
-"appPicker.search" = "Search apps...";
+"appPicker.search" = "Search apps";
 
 "settings.group.trigger" = "Trigger";
 "settings.group.playback" = "Playback";
@@ -109,18 +95,9 @@
 
 "music.placeholder" = "Music";
 
-"settings.addKeyAction" = "Add keyboard action";
-"settings.addKeyAction.subtitle" = "Trigger a key combination";
 "keyAction.title" = "Set up keyboard action";
-"keyAction.name" = "Name, e.g. WeChat screenshot";
-"keyAction.combination" = "Key combination";
 "keyAction.record" = "Record combination";
-"keyAction.hint" = "Click to record, then press a combination containing ⌘, ⌃ or ⌥. Press Esc to cancel.";
 "keyAction.conflict" = "Choose a combination different from the Dok activation shortcut.";
-"keyAction.target" = "Switch to";
-"keyAction.currentApp" = "No app switch (click to choose)";
-"keyAction.clearTarget" = "Clear";
-"keyAction.targetHint" = "Without a target, keep the current app and send the shortcut directly. Global shortcuts such as WeChat screenshots need no app switch; WeChat must be running.";
 "keyAction.permission" = "Enable Accessibility access for Dok to record and execute combinations.";
 "keyAction.openAccessibility" = "Open Accessibility settings";
 "keyAction.error" = "Keyboard action could not run";
@@ -132,4 +109,39 @@
 "keyAction.needModifier" = "Include ⌘, ⌃ or ⌥";
 "keyAction.captureError" = "Could not start recording. Check Accessibility access for Dok.";
 
-"settings.glass.followsSystem" = "Follows System";
+
+"settings.add" = "Add";
+"settings.add.subtitle" = "Apps, files, links and more";
+"settings.add.full" = "The wheel is full";
+"settings.restoreDefaults.inline" = "Your current wheel will be replaced";
+"settings.slider.resetHint" = "Double-click to reset";
+"settings.version" = "Version";
+"wheel.context.replace" = "Replace";
+"wheel.context.replace.prompt" = "Replace";
+"wheel.context.reveal" = "Show in Finder";
+"wheel.context.remove" = "Remove";
+
+"keyAction.editTitle" = "Edit Keyboard Action";
+"keyAction.nameLabel" = "Name";
+"keyAction.name" = "Optional, named automatically";
+"keyAction.target" = "Switch to";
+"keyAction.noSwitch" = "Don't switch (current app)";
+"keyAction.runningApps" = "Running";
+"keyAction.chooseOther" = "Choose Another App";
+"keyAction.recordPrompt" = "Click to record a combination";
+"keyAction.recordCaption" = "Must include ⌘, ⌃ or ⌥";
+"keyAction.recordingCaption" = "Press a combination, Esc to cancel";
+"keyAction.rerecordCaption" = "Click to record again";
+"keyAction.footnote" = "With a target app, Dok switches to it before sending the keys. Global shortcuts such as WeChat screenshots need no target.";
+"keyAction.openAccessibilityShort" = "Enable";
+
+"panel.done" = "Done";
+"add.kind.app" = "Apps";
+"add.kind.file" = "Files";
+"add.kind.link" = "Website";
+"add.kind.keyAction" = "Keys";
+"panel.dropTitle" = "Drop files or folders";
+"panel.dropHint" = "You can drop several at once";
+"panel.choose" = "Choose";
+"panel.full" = "The wheel is full. Remove something first.";
+"openPanel.message" = "Choose files or folders for the wheel";

@@ -19,8 +19,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var wheelWindow: DokWheelWindow?
     var settingsWindow: NSWindow?
     private var settingsHostingController: NSHostingController<AnyView>?
+    /// 正在伸缩到的窗口高度；动画途中重复收到同一目标时不重新起动画。
+    private var settingsTargetHeight: CGFloat?
+    /// 本次打开后是否已测得内容高度。第一次只校正尺寸、不播动画。
+    private var settingsHasMeasuredContent = false
+
+    private static func settingsHeightKey(_ tab: SettingsTab) -> String {
+        "dok.settings.windowHeight.\(tab.rawValue)"
+    }
     var hotKeyRef: EventHotKeyRef?
-    var isMenuOpen = false
+    /// Derived from the wheel's state machine so the trigger never disagrees with the window.
+    var isMenuOpen: Bool { wheelWindow?.isPresented ?? false }
     private var settingsKeyMonitor: Any?
     private var settingsDeactivationWorkItem: DispatchWorkItem?
     private var settingsActivationGeneration = 0
@@ -538,9 +547,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window = existing
         } else {
             let created = DokWheelWindow(appState: appState)
-            created.onDismiss = { [weak self] in
-                self?.isMenuOpen = false
-            }
             created.onOpenSettings = { [weak self] in
                 self?.openSettings()
             }
@@ -551,13 +557,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let mouseLocation = NSEvent.mouseLocation
         appState.nowPlaying.refreshForMenuPresentation()
         window.showAt(point: mouseLocation)
-        isMenuOpen = true
         NSLog("✅ showDok: window shown at (%.0f, %.0f)", mouseLocation.x, mouseLocation.y)
     }
 
     func closeDok() {
         guard let window = wheelWindow else { return }
-        isMenuOpen = false
         window.dismiss()
     }
 
@@ -576,18 +580,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if settingsWindow == nil {
             let settingsView = AnyView(
-                SettingsView(selectedTab: selectedSettingsTab) { [weak self] tab in
-                    guard let self else { return }
-                    self.selectedSettingsTab = tab
-                    UserDefaults.standard.set(tab.rawValue, forKey: self.selectedSettingsPaneDefaultsKey)
-                }
+                SettingsView(
+                    selectedTab: selectedSettingsTab,
+                    onSelectTab: { [weak self] tab in
+                        guard let self else { return }
+                        self.selectedSettingsTab = tab
+                        UserDefaults.standard.set(tab.rawValue, forKey: self.selectedSettingsPaneDefaultsKey)
+                    },
+                    onContentHeight: { [weak self] tab, height in
+                        // 布局回调里不直接改窗口尺寸，下一轮再调整。
+                        DispatchQueue.main.async { self?.fitSettingsWindow(tab: tab, contentHeight: height) }
+                    }
+                )
                     .environmentObject(appState)
             )
             let hostingController = NSHostingController(rootView: settingsView)
+            // 窗口尺寸由 fitSettingsWindow 决定，不让 SwiftUI 的理想尺寸反过来约束窗口。
+            hostingController.sizingOptions = []
             let window = NSWindow(contentViewController: hostingController)
             window.title = Loc.string("settings.windowTitle")
             window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             window.setContentSize(NSSize(width: 920, height: 520))
+            window.contentMinSize = NSSize(width: 920, height: 360)
             window.titlebarAppearsTransparent = true
             window.isOpaque = false
             window.backgroundColor = .clear
@@ -598,6 +612,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.standardWindowButton(.zoomButton)?.isHidden = false
             window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
             window.standardWindowButton(.zoomButton)?.isEnabled = false
+            // 窗口样式都设好之后再定高度（标题栏样式会改变边框尺寸）。
+            // 用上次记住的页面高度开窗，打开时就是对的尺寸，不再先开大再缩。
+            let rememberedHeight = UserDefaults.standard.double(forKey: Self.settingsHeightKey(selectedSettingsTab))
+            if rememberedHeight > 0 {
+                var frame = window.frame
+                frame.size.height = rememberedHeight
+                window.setFrame(frame, display: false)
+            }
             window.center()
             window.delegate = self
             self.settingsHostingController = hostingController
@@ -621,6 +643,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let w = settingsWindow else { return }
         w.makeKeyAndOrderFront(nil)
         activateSettingsWindow(w, generation: settingsActivationGeneration)
+    }
+
+    /// 窗口高度跟随当前页面的内容高度，顶边不动，切换页面时平滑伸缩。
+    /// 打开窗口后的第一次测量只是校正（直接到位），动画只留给切换页面。
+    private func fitSettingsWindow(tab: SettingsTab, contentHeight height: CGFloat) {
+        guard let window = settingsWindow, height > 0 else { return }
+        let isFirstMeasurement = !settingsHasMeasuredContent
+        settingsHasMeasuredContent = true
+        let titlebar = window.frame.height - window.contentLayoutRect.height
+        let target = max((height + titlebar).rounded(), window.contentMinSize.height)
+        // 记住整个窗口的高度（含标题栏），下次直接按它开窗。
+        UserDefaults.standard.set(Double(target), forKey: Self.settingsHeightKey(tab))
+        guard settingsTargetHeight != target, abs(window.frame.height - target) > 0.5 else { return }
+        settingsTargetHeight = target
+        var frame = window.frame
+        frame.origin.y += frame.height - target
+        frame.size.height = target
+        guard window.isVisible, !isFirstMeasurement,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            window.setFrame(frame, display: true)
+            return
+        }
+        // 与页面淡入淡出同一曲线：起步快、收尾很轻，不是 AppKit 默认的匀速伸缩。
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.32
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0, 1)
+            context.allowsImplicitAnimation = true
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     @objc private func settingsInputFocusRequested(_ notification: Notification) {
@@ -679,6 +730,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             settingsKeyMonitor = nil
         }
         settingsWindow = nil
+        settingsTargetHeight = nil
+        settingsHasMeasuredContent = false
         settingsHostingController = nil
         settingsDeactivationWorkItem?.cancel()
         let generation = settingsActivationGeneration

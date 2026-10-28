@@ -137,6 +137,16 @@ final class KeyActionRecorderControl: NSButton {
     var value: HotkeyConfig? { didSet { if !recording { refreshTitle() } } }
     var onChange: ((HotkeyConfig) -> Void)?
     var onRecordingChanged: ((Bool) -> Void)?
+    /// 录入中的提示（如“请同时按 ⌘、⌃ 或 ⌥”），供自绘外观显示；nil 表示无提示。
+    var onStatusChanged: ((String?) -> Void)?
+    /// false 时控件本身不绘制，只作为透明的点击与键盘焦点区域。
+    var drawsChrome = true {
+        didSet {
+            isBordered = drawsChrome
+            focusRingType = drawsChrome ? .default : .none
+            needsDisplay = true
+        }
+    }
     private(set) var recording = false
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
@@ -156,6 +166,9 @@ final class KeyActionRecorderControl: NSButton {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private func refreshTitle() { title = value?.displayString ?? Loc.string("keyAction.record") }
+    override func draw(_ dirtyRect: NSRect) {
+        if drawsChrome { super.draw(dirtyRect) }
+    }
 
     @objc private func toggleRecording() {
         if recording { stop(reason: "cancel"); return }
@@ -234,6 +247,7 @@ final class KeyActionRecorderControl: NSButton {
         if code == 53 && flags.isEmpty { stop(reason: "escape"); return }
         guard let result = KeyActionService.recordedCombination(keyCode: code, modifiers: flags) else {
             title = Loc.string("keyAction.needModifier")
+            onStatusChanged?(title)
             return
         }
         // Publish on key-down; never depend on receiving a matching key-up to save the value.

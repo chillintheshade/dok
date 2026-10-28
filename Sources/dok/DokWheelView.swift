@@ -14,6 +14,151 @@ private struct CenterControlHoverFeedback: ViewModifier {
     }
 }
 
+/// 设置齿轮平时很淡，悬停时加深到次要文字色，并带与其他中心控件一致的轻微放大。
+private struct SettingsGearStyle: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let resting: HierarchicalShapeStyle
+    let hovered: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(hovered ? .secondary : resting)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hovered)
+            .modifier(CenterControlHoverFeedback(active: hovered))
+    }
+}
+
+/// 上一首/下一首的状态反馈：播放器切歌期间显示为不可点（无悬停高亮），
+/// 按下被接受时轻缩回弹，被拒绝时左右轻晃。命中判定仍由窗口负责。
+private struct SkipButtonFeedback: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let direction: NowPlayingService.SkipDirection
+    let locked: Bool
+    let hovered: Bool
+    let event: NowPlayingService.SkipEvent?
+
+    @State private var pressScale: CGFloat = 1
+    @State private var shakes: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(CenterControlHoverFeedback(active: hovered && !locked))
+            .opacity(locked ? MenuMotion.skipLockedOpacity : 1)
+            .scaleEffect(pressScale)
+            .modifier(ShakeEffect(shakes: shakes))
+            // 上锁要快；解锁与新曲目滑入同一刻、同一条曲线，二者一起落定。
+            .animation(locked ? .easeOut(duration: 0.15) : MenuMotion.trackPushAnimation, value: locked)
+            .onChange(of: event) { event in
+                guard let event, event.direction == direction, !reduceMotion else { return }
+                if event.accepted {
+                    withAnimation(.easeOut(duration: 0.07)) { pressScale = 0.84 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.07) {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.55)) { pressScale = 1 }
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.24)) { shakes += 1 }
+                }
+            }
+    }
+}
+
+/// 单行文字：放得下时居中静止；放不下时停顿后向左滑到末尾完整露出，停一下再滑回开头，
+/// 然后停住，不循环。只在轮盘可见时播放，每张新卡片、每次唤出各播放一次。
+/// 两侧渐隐由外层遮罩提供，静止时文字从 inset 处开始，开头不被淡掉。
+private struct OverflowTitle: View {
+    let text: String
+    let font: Font
+    let width: CGFloat
+    let inset: CGFloat
+    let isActive: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var textWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    private static let speed: CGFloat = 30
+    private static let minimumTravel: Double = 0.6
+    private static let startDelay: Double = 0.6
+    private static let endPause: Double = 0.3
+
+    private var overflow: CGFloat { textWidth - (width - inset * 2) }
+
+    var body: some View {
+        Group {
+            if overflow > 0 && !reduceMotion {
+                label
+                    .fixedSize()
+                    .offset(x: inset + offset)
+                    .frame(width: width, alignment: .leading)
+            } else {
+                label
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: width)
+            }
+        }
+        .background(
+            label
+                .fixedSize()
+                .hidden()
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: TitleWidthKey.self, value: proxy.size.width)
+                })
+        )
+        .onPreferenceChange(TitleWidthKey.self) { textWidth = $0 }
+        .task(id: "\(text)|\(isActive)|\(overflow > 0)|\(reduceMotion)") { await reveal() }
+    }
+
+    private var label: some View {
+        Text(text)
+            .font(font)
+            .foregroundColor(.primary)
+    }
+
+    @MainActor
+    private func reveal() async {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { offset = 0 }
+        guard isActive, overflow > 0, !reduceMotion else { return }
+
+        let travel = max(Double(overflow / Self.speed), Self.minimumTravel)
+        let stops: [(delay: Double, target: CGFloat)] = [
+            (Self.startDelay, -overflow),       // 向左，直到末尾的歌手名完整露出
+            (travel + Self.endPause, 0),        // 停一下，再推回开头
+        ]
+        for stop in stops {
+            try? await Task.sleep(nanoseconds: UInt64(stop.delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: travel)) { offset = stop.target }
+        }
+    }
+}
+
+private struct TitleWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// 每增加 1 晃动两个来回，整数值时回到原位，因此可重复触发。
+private struct ShakeEffect: GeometryEffect {
+    var shakes: CGFloat
+    var amplitude: CGFloat = 2.5
+
+    var animatableData: CGFloat {
+        get { shakes }
+        set { shakes = newValue }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let phase = shakes - shakes.rounded(.down)
+        let x = sin(phase * .pi * 4) * amplitude * (1 - phase)
+        return ProjectionTransform(CGAffineTransform(translationX: x, y: 0))
+    }
+}
+
 // MARK: - Selection Wedge Shape
 
 struct WedgeShape: Shape {
@@ -169,6 +314,70 @@ struct NativeGlassSamplingLayer: NSViewRepresentable {
     }
 }
 
+/// 已播放的一段“水流”：从 12 点顺时针到 progress，作为液态玻璃的形状。
+/// 像一股流动的水：尾部细、身子匀、前端在表面张力下鼓成一颗圆润的水珠。
+/// 轮廓是一条闭合路径（外沿 → 前端半圆 → 内沿 → 尾端半圆），每帧计算也很轻。
+struct ProgressArcBand: Shape {
+    var progress: Double
+    /// 水流主体的宽度；尾部和水珠按比例计算。可动画，悬停时随弹簧鼓起再回弹。
+    var width: CGFloat
+    /// 外框里给最宽状态留的边距，保证宽度变化时水流中线不动，始终在内外圈交接处。
+    var maxWidth: CGFloat
+
+    var animatableData: AnimatablePair<Double, CGFloat> {
+        get { AnimatablePair(progress, width) }
+        set { progress = newValue.first; width = newValue.second }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let sweep = 2 * Double.pi * min(max(progress, 0), 1)
+        guard sweep > 0 else { return Path() }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let headWidth = width * 1.45
+        let radius = min(rect.width, rect.height) / 2 - maxWidth * 1.45 / 2
+        let length = Double(radius) * sweep
+        let start = -Double.pi / 2
+
+        // 沿弧长的宽度：尾部 12pt 内从细到匀，前端 10pt 内鼓成水珠（余弦隆起）。
+        func widthAt(_ distance: Double) -> CGFloat {
+            let tail = min(distance / 12, 1)
+            var w = Double(width) * (0.6 + 0.4 * tail * tail * (3 - 2 * tail))
+            let toHead = length - distance
+            if toHead < 10 {
+                let bump = 0.5 - 0.5 * cos(.pi * (1 - toHead / 10))
+                w += Double(headWidth - width) * bump
+            }
+            return CGFloat(w)
+        }
+        func point(_ angle: Double, _ r: CGFloat) -> CGPoint {
+            CGPoint(x: center.x + r * CGFloat(cos(angle)), y: center.y + r * CGFloat(sin(angle)))
+        }
+
+        let steps = max(2, Int(sweep / (Double.pi / 90)))
+        var outer: [CGPoint] = [], inner: [CGPoint] = []
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            let angle = start + sweep * t
+            let half = widthAt(length * t) / 2
+            outer.append(point(angle, radius + half))
+            inner.append(point(angle, radius - half))
+        }
+        let end = start + sweep
+        var path = Path()
+        path.move(to: outer[0])
+        outer.dropFirst().forEach { path.addLine(to: $0) }
+        // 前端水珠：外沿 → 前方 → 内沿
+        path.addArc(center: point(end, radius), radius: widthAt(length) / 2,
+                    startAngle: .radians(end), endAngle: .radians(end + .pi), clockwise: false)
+        inner.reversed().forEach { path.addLine(to: $0) }
+        // 尾端：内沿 → 后方 → 外沿
+        path.addArc(center: point(start, radius), radius: widthAt(0) / 2,
+                    startAngle: .radians(start + .pi), endAngle: .radians(start + 2 * .pi), clockwise: false)
+        path.closeSubpath()
+        return path
+    }
+}
+
 extension View {
     @ViewBuilder
     func dokCapsuleGlass() -> some View {
@@ -250,6 +459,24 @@ enum MenuMotion {
     static let windowWarmupAlpha: CGFloat = 0.01
     static let iconFocusResponse: Double = 0.18
     static let centerSwapResponse: Double = 0.16
+    /// 名字要停留这么久才出现：鼠标只是扫过时中心不闪；已经显示时换到相邻一项则立刻切换。
+    static let centerLabelDwell: Double = 0.15
+    /// 进度环与中心圆的边重合，只有一个圆。
+    static let progressInset: CGFloat = 0
+    /// 已播放弧带的玻璃宽度，正好跨在内圆与外圈的交接线上。
+    static let progressGlassWidth: CGFloat = 2.5
+    /// 悬停时只鼓起一点（配合弹簧回弹），不再大幅加粗。
+    static let progressGlassHoverWidth: CGFloat = 3.1
+    /// 玻璃上一层极淡、几乎无色的冷调（0.70/0.90 的青读起来偏青了）：冲淡细条上原生玻璃的暗边，又让它读起来是清凉的水，而不是白色磨砂。
+    static let progressWaterTint = Color(red: 0.86, green: 0.94, blue: 1.0).opacity(0.16)
+    static let skipLockedOpacity: Double = 0.3
+    /// 卡片推入时两侧边缘的渐隐宽度，避免被中心区域硬切。
+    static let trackPushEdgeFade: CGFloat = 14
+
+    /// 旧卡片推出、新卡片推入共用的曲线：起步快、落定柔。
+    static var trackPushAnimation: Animation {
+        .timingCurve(0.25, 0.85, 0.25, 1, duration: 0.46)
+    }
 
     static let iconSelectedScale: CGFloat = 1.07
     static let iconSelectedPushRatio: CGFloat = 0.018
@@ -357,6 +584,9 @@ struct DokWheelView: View {
 
     @State private var wedgeAngle: Double = 90
     @State private var showWedge: Bool = false
+    /// 中心正在显示名字的项目。只有文件、网址、按键动作会有，并且要停留一下才出现。
+    @State private var centerLabelItemID: UUID?
+    @State private var centerLabelTask: DispatchWorkItem?
 
     init(appState: AppState,
          onAppSelected: ((AppItem) -> Void)? = nil,
@@ -393,10 +623,8 @@ struct DokWheelView: View {
     private var musicArtworkBaseSize: CGFloat { 58 }
     private var musicArtworkSize: CGFloat { musicArtworkBaseSize * centerMusicControlScale }
     private var musicArtworkCornerRadius: CGFloat { 12 }
-    private var musicProgressDiameter: CGFloat { centerLensRadius * 2 }
-    private var musicProgressLineWidth: CGFloat {
-        min(max(0.9 * centerMusicControlScale, 0.9), 1.0)
-    }
+    /// 进度环比玻璃边缘往里收一点，两条边不挤在一起。
+    private var musicProgressDiameter: CGFloat { centerLensRadius * 2 - MenuMotion.progressInset * 2 }
     private var musicTitleFontSize: CGFloat { 11.5 * centerMusicControlScale }
     private var musicSecondaryControlSize: CGFloat { 15 * centerMusicControlScale }
     private var musicPrimaryControlSize: CGFloat { 22 * centerMusicControlScale }
@@ -406,8 +634,7 @@ struct DokWheelView: View {
         min(min(max(iconOrbitRadius * 1.28, 142), 230), max(centerLensRadius * 2 - 18, 96))
     }
     private var showsMusicController: Bool {
-        appState.selectedIndex == nil
-            && appState.selectedRecentAppIndex == nil
+        centerLabelItem == nil
             && nowPlaying.hasNowPlaying
             && appState.settings.showMusicControl
     }
@@ -445,6 +672,9 @@ struct DokWheelView: View {
         .frame(width: Self.windowSize, height: Self.windowSize)
         .onChange(of: appState.selectedIndex) { newIndex in
             handleSelectionChange(newIndex)
+        }
+        .onChange(of: centerLabelCandidateID) { id in
+            updateCenterLabel(id)
         }
         .onChange(of: appState.isMenuVisible) { visible in
             if !visible {
@@ -634,14 +864,6 @@ struct DokWheelView: View {
                     .frame(width: satelliteIconSize, height: satelliteIconSize)
             }
 
-            Image(systemName: "clock.fill")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.72))
-                .frame(width: 15, height: 15)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.32), lineWidth: 0.5))
-                .offset(x: baseDiameter * 0.31, y: baseDiameter * 0.31)
-
             if let badge = appState.notificationBadge(for: app) {
                 SlotNotificationBadge(text: badge, iconSize: satelliteIconSize)
                     .offset(x: baseDiameter * 0.31, y: -baseDiameter * 0.31)
@@ -681,7 +903,9 @@ struct DokWheelView: View {
     @ViewBuilder
     private var musicProgressBoundaryLayer: some View {
         if showsMusicController, nowPlaying.duration != nil {
-            TimelineView(.periodic(from: .now, by: 0.25)) { context in
+            // 播放中逐帧推进；暂停或轮盘收起时停帧，不耗电。
+            TimelineView(.animation(minimumInterval: nil,
+                                    paused: !nowPlaying.isPlaying || !appState.isMenuVisible)) { context in
                 if let progress = nowPlaying.playbackProgress(at: context.date) {
                     musicProgressBoundary(progress: progress)
                 }
@@ -689,38 +913,116 @@ struct DokWheelView: View {
         }
     }
 
+    /// 内圆与外圈的交接处本身就是底轨，不另画线。进度是一股液态的水：形状是尾细、前端鼓成水珠的水流，
+    /// 由系统自己的透明液态玻璃 `.clear` 来渲染。玻璃上一层极淡的冷青，冲淡原生玻璃在细条上显出的暗边，
+    /// 让它通透而清凉；受光一侧（左上）有一道细的反光，背光一侧（右下）有一道柔的焦散——光穿过水后聚在背面，
+    /// 这是水与玻璃、塑料最不一样的地方。
+    /// 悬停不是生硬地加粗，而是像水被碰了一下：轻轻鼓起，弹簧稍冲过头再回稳。
+    /// macOS 26 以下没有液态玻璃，退回一道细高光弧。
+    @ViewBuilder
     private func musicProgressBoundary(progress: Double) -> some View {
-        Circle()
-            .trim(from: 0, to: progress)
-            .stroke(
-                Color.primary.opacity(0.28),
-                style: StrokeStyle(lineWidth: musicProgressLineWidth, lineCap: .round)
-            )
-            .rotationEffect(.degrees(-90))
-            .frame(
-                width: musicProgressDiameter + (appState.centerControlHover == .progress && !reduceMotion ? 2 : 0),
-                height: musicProgressDiameter + (appState.centerControlHover == .progress && !reduceMotion ? 2 : 0)
-            )
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: appState.centerControlHover == .progress)
-            .allowsHitTesting(false)
+        let hovered = appState.centerControlHover == .progress
+        let width = hovered ? MenuMotion.progressGlassHoverWidth : MenuMotion.progressGlassWidth
+        let maxWidth = MenuMotion.progressGlassHoverWidth
+        let side = musicProgressDiameter + maxWidth * 1.45
+        Group {
+            if #available(macOS 26.0, *) {
+                ZStack {
+                    Color.clear
+                        .glassEffect(.clear.tint(MenuMotion.progressWaterTint),
+                                     in: ProgressArcBand(progress: progress, width: width, maxWidth: maxWidth))
+                    waterCaustic(progress: progress, maxWidth: maxWidth)
+                    waterGlint(progress: progress, side: side, maxWidth: maxWidth)
+                }
+            } else {
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .blendMode(.plusLighter)
+                    .padding(maxWidth * 1.45 / 2)
+            }
+        }
+        .frame(width: side, height: side)
+        .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.42), value: hovered)
+        .allowsHitTesting(false)
     }
 
-    private var selectedAppName: String {
-        if let index = appState.selectedIndex, index < appState.settings.apps.count {
-            return appState.settings.apps[index].displayName
+    /// 水面的反光：沿水流中线、整体向光源（左上）偏一点，于是左上段落在水流外沿、右下段落在内沿，
+    /// 正好是朝光的那一侧。只在受光处出现，其余位置为零，所以是断续的几段，而不是一整圈白线。
+    private func waterGlint(progress: Double, side: CGFloat, maxWidth: CGFloat) -> some View {
+        Circle()
+            .trim(from: 0, to: progress)
+            .stroke(Self.waterGlintLighting, style: StrokeStyle(lineWidth: 0.6, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(maxWidth * 1.45 / 2)
+            .offset(x: -0.6, y: -0.6)
+            .blendMode(.plusLighter)
+    }
+
+    /// 位置从 3 点钟方向顺时针（经 -90° 旋转补偿）。只有左上一段，其他地方没有。
+    private static let waterGlintLighting = AngularGradient(
+        stops: [
+            (0.000, 0.0), (0.540, 0.0), (0.600, 0.85), (0.640, 0.9), (0.700, 0.0),
+            (1.000, 0.0),
+        ].map { Gradient.Stop(color: .white.opacity($0.1), location: $0.0) },
+        center: .center,
+        angle: .degrees(90)
+    )
+
+    /// 焦散：光从左上射进水里，在背光的一侧聚成一道柔亮。与反光相反地向右下偏，于是落在右下段的外沿；
+    /// 比反光宽、淡、带一点青，渐入渐出很长，读起来是透出来的光，而不是画上去的线。
+    private func waterCaustic(progress: Double, maxWidth: CGFloat) -> some View {
+        Circle()
+            .trim(from: 0, to: progress)
+            .stroke(Self.waterCausticLighting, style: StrokeStyle(lineWidth: 1.1, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .padding(maxWidth * 1.45 / 2)
+            .offset(x: 0.6, y: 0.6)
+            .blendMode(.plusLighter)
+    }
+
+    /// 右下一段（约 4 点半方向）最亮，两侧很长地淡出。
+    private static let waterCausticLighting = AngularGradient(
+        stops: [
+            (0.000, 0.0), (0.030, 0.0), (0.110, 0.34), (0.150, 0.34), (0.250, 0.0),
+            (1.000, 0.0),
+        ].map { Gradient.Stop(color: Color(red: 0.94, green: 0.98, blue: 1.0).opacity($0.1), location: $0.0) },
+        center: .center,
+        angle: .degrees(90)
+    )
+
+    /// 悬停项目里需要名字的那一个。应用和最近应用看图标就认得，不显示名字，中心保持音乐控制或齿轮。
+    private var centerLabelCandidateID: UUID? {
+        guard let index = appState.selectedIndex, index < appState.settings.apps.count else { return nil }
+        let item = appState.settings.apps[index]
+        return item.itemType == .app ? nil : item.id
+    }
+
+    private var centerLabelItem: AppItem? {
+        guard let id = centerLabelItemID else { return nil }
+        return appState.settings.apps.first { $0.id == id }
+    }
+
+    private func updateCenterLabel(_ id: UUID?) {
+        centerLabelTask?.cancel()
+        centerLabelTask = nil
+        guard let id else {
+            centerLabelItemID = nil
+            return
         }
-        if let index = appState.selectedRecentAppIndex, index < appState.recentAppSnapshot.count {
-            return appState.recentAppSnapshot[index].displayName
+        if centerLabelItemID != nil {
+            centerLabelItemID = id
+            return
         }
-        return ""
+        let task = DispatchWorkItem { centerLabelItemID = id }
+        centerLabelTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + MenuMotion.centerLabelDwell, execute: task)
     }
 
     private var centerContentIdentity: String {
-        if let index = appState.selectedIndex, index < appState.settings.apps.count {
-            return "app-\(appState.settings.apps[index].id)"
-        }
-        if let index = appState.selectedRecentAppIndex, index < appState.recentAppSnapshot.count {
-            return "recent-app-\(appState.recentAppSnapshot[index].id)"
+        if let item = centerLabelItem {
+            return "label-\(item.id)"
         }
 
         let np = nowPlaying
@@ -736,7 +1038,8 @@ struct DokWheelView: View {
     @ViewBuilder
     var centerContent: some View {
         let np = nowPlaying
-        let noSelection = appState.selectedIndex == nil && appState.selectedRecentAppIndex == nil
+        let labelItem = centerLabelItem
+        let noSelection = labelItem == nil
         let hasMusic = np.hasNowPlaying && appState.settings.showMusicControl
 
         ZStack {
@@ -744,8 +1047,8 @@ struct DokWheelView: View {
             if noSelection && !hasMusic {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: centerSettingsIconSize, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .settings))
+                    .modifier(SettingsGearStyle(resting: .tertiary,
+                                                hovered: appState.centerControlHover == .settings))
                     .transition(MenuMotion.centerContentTransition)
             }
 
@@ -755,18 +1058,68 @@ struct DokWheelView: View {
                     .transition(MenuMotion.centerContentTransition)
             }
 
-            // 状态 3: 选中应用 → 应用名
-            if !noSelection {
-                Text(selectedAppName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .dokCapsuleGlass()
+            // 状态 3: 停在文件、网址、按键动作上 → 名字 + 一行区分信息
+            if let labelItem {
+                centerLabel(for: labelItem)
                     .transition(MenuMotion.centerContentTransition)
             }
         }
         .animation(MenuMotion.centerAnimation, value: centerContentIdentity)
+    }
+
+    /// 第二行让同类项目分得开：文件看所在文件夹，网址看域名，按键动作看组合键。
+    private func centerLabel(for item: AppItem) -> some View {
+        VStack(spacing: 5) {
+            Text(item.displayName)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            centerLabelDetail(for: item)
+        }
+        .frame(maxWidth: musicControllerWidth - 28)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .dokCapsuleGlass()
+    }
+
+    @ViewBuilder
+    private func centerLabelDetail(for item: AppItem) -> some View {
+        switch item.itemType {
+        case .fileOrFolder:
+            let folder = URL(fileURLWithPath: item.path).deletingLastPathComponent().path
+            centerLabelCaption(FileManager.default.displayName(atPath: folder))
+        case .webLink:
+            if let host = item.webURL?.host {
+                centerLabelCaption(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
+            }
+        case .keyAction:
+            if let combo = item.keyCombination {
+                HStack(spacing: 3) {
+                    ForEach(Array(combo.keySymbols.enumerated()), id: \.offset) { _, symbol in
+                        Text(symbol)
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 17, minHeight: 17)
+                            .padding(.horizontal, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.6)
+                            )
+                    }
+                }
+            }
+        case .app:
+            EmptyView()
+        }
+    }
+
+    private func centerLabelCaption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 
     // MARK: - Music Controller
@@ -776,26 +1129,16 @@ struct DokWheelView: View {
         VStack(spacing: 0) {
             Spacer().frame(height: musicVerticalGap)
 
-            musicArtwork
-
-            Spacer().frame(height: musicVerticalGap * 0.75)
-
-            // 曲名 - 歌手
-            Group {
-                if nowPlaying.trackName.isEmpty {
-                    Text(Loc.string("music.placeholder"))
-                        .foregroundStyle(.tertiary)
-                } else if nowPlaying.artistName.isEmpty {
-                    Text(nowPlaying.trackName)
-                        .foregroundColor(.primary)
-                } else {
-                    Text("\(nowPlaying.trackName) - \(nowPlaying.artistName)")
-                        .foregroundColor(.primary)
-                }
+            // 封面与曲名随曲目整体换出：切歌时沿切歌方向滑入，按钮保持不动。
+            ZStack {
+                trackInfo
+                    .id(trackInfoIdentity)
+                    .transition(trackInfoTransition)
             }
-            .font(.system(size: musicTitleFontSize, weight: .medium))
-            .lineLimit(1)
             .frame(width: musicControllerWidth)
+            .mask(trackPushMask)
+            .animation(nowPlaying.trackCard?.animated == false ? nil : trackInfoAnimation,
+                       value: trackInfoIdentity)
 
             Spacer().frame(height: musicVerticalGap)
 
@@ -803,7 +1146,12 @@ struct DokWheelView: View {
                 Image(systemName: "backward.fill")
                     .font(.system(size: musicSecondaryControlSize))
                     .foregroundStyle(.secondary)
-                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .previous))
+                    .modifier(SkipButtonFeedback(
+                        direction: .backward,
+                        locked: nowPlaying.isSkipLocked,
+                        hovered: appState.centerControlHover == .previous,
+                        event: nowPlaying.skipEvent
+                    ))
 
                 Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: musicPrimaryControlSize))
@@ -813,7 +1161,12 @@ struct DokWheelView: View {
                 Image(systemName: "forward.fill")
                     .font(.system(size: musicSecondaryControlSize))
                     .foregroundStyle(.secondary)
-                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .next))
+                    .modifier(SkipButtonFeedback(
+                        direction: .forward,
+                        locked: nowPlaying.isSkipLocked,
+                        hovered: appState.centerControlHover == .next,
+                        event: nowPlaying.skipEvent
+                    ))
             }
 
             Spacer().frame(height: musicVerticalGap)
@@ -821,20 +1174,79 @@ struct DokWheelView: View {
             // 设置齿轮
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 12.5 * centerMusicControlScale, weight: .medium))
-                .foregroundStyle(.quaternary)
-                .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .settings))
+                .modifier(SettingsGearStyle(resting: .quaternary,
+                                            hovered: appState.centerControlHover == .settings))
         }
         .allowsHitTesting(false)
     }
 
-    private var musicArtwork: some View {
+    private var trackInfo: some View {
+        let card = nowPlaying.trackCard
+        return VStack(spacing: 0) {
+            musicArtwork(card?.artwork)
+
+            Spacer().frame(height: musicVerticalGap * 0.75)
+
+            // 曲名 - 歌手：超出宽度时向左滑到末尾再滑回，播放一次。
+            if let card {
+                OverflowTitle(
+                    text: card.artist.isEmpty ? card.title : "\(card.title) - \(card.artist)",
+                    font: .system(size: musicTitleFontSize, weight: .medium),
+                    width: musicControllerWidth,
+                    inset: MenuMotion.trackPushEdgeFade,
+                    isActive: appState.isMenuVisible
+                )
+            } else {
+                Text(Loc.string("music.placeholder"))
+                    .foregroundStyle(.tertiary)
+                    .font(.system(size: musicTitleFontSize, weight: .medium))
+                    .lineLimit(1)
+                    .frame(width: musicControllerWidth)
+            }
+        }
+    }
+
+    private var trackInfoIdentity: String {
+        nowPlaying.trackCard?.id.uuidString ?? "empty"
+    }
+
+    /// 推入：旧卡片与新卡片左右紧挨着一起平移，前进向左推、后退向右推，位移等于卡片宽度。
+    private var trackInfoTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        let width = musicControllerWidth
+        let sign: CGFloat = nowPlaying.skipDirection == .forward ? 1 : -1
+        return .asymmetric(
+            insertion: .offset(x: width * sign),
+            removal: .offset(x: -width * sign)
+        )
+    }
+
+    private var trackInfoAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.2) : MenuMotion.trackPushAnimation
+    }
+
+    /// 卡片宽度的窗口，两侧渐隐。用渐变遮罩而非模糊（模糊在透明窗口里会闪）。
+    private var trackPushMask: some View {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: MenuMotion.trackPushEdgeFade)
+            Rectangle()
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: MenuMotion.trackPushEdgeFade)
+        }
+    }
+
+    /// 同一张卡片的封面晚到或更换时原地交叉淡化；换曲目由整张卡片推入完成。
+    private func musicArtwork(_ artwork: NSImage?) -> some View {
         ZStack {
-            if let art = nowPlaying.albumArt {
-                Image(nsImage: art)
+            if let artwork {
+                Image(nsImage: artwork)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: musicArtworkSize, height: musicArtworkSize)
                     .clipShape(RoundedRectangle(cornerRadius: musicArtworkCornerRadius, style: .continuous))
+                    .id(ObjectIdentifier(artwork))
+                    .transition(.opacity)
             } else {
                 RoundedRectangle(cornerRadius: musicArtworkCornerRadius, style: .continuous)
                     .fill(.quaternary)
@@ -844,9 +1256,11 @@ struct DokWheelView: View {
                             .font(.system(size: 24 * centerMusicControlScale, weight: .medium))
                             .foregroundStyle(.tertiary)
                     )
+                    .transition(.opacity)
             }
         }
         .frame(width: musicArtworkSize, height: musicArtworkSize)
+        .animation(.easeInOut(duration: 0.35), value: artwork.map(ObjectIdentifier.init))
     }
 
     // MARK: - Selection

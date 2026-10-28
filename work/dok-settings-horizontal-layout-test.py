@@ -14,7 +14,9 @@ def require(needle: str, description: str) -> None:
 
 for needle, description in [
     ("static let windowWidth: CGFloat = 920", "fixed settings width token"),
-    ("static let windowHeight: CGFloat = 520", "fixed settings height token"),
+    ("static let initialWindowHeight: CGFloat = 520", "first-open height before content is measured"),
+    ("SettingsContentHeightKey", "window height follows the page content"),
+    ("onContentHeight(", "content height reported to the window"),
     ("static let sidebarWidth: CGFloat = 216", "fixed sidebar width"),
     ("static let navigationRowHeight: CGFloat = 34", "navigation row height"),
     ("static let rowHeight: CGFloat = 44", "settings row height"),
@@ -31,15 +33,18 @@ for needle, description in [
     ("private var settingsSidebar", "in-window sidebar"),
     ("ForEach(SettingsTab.allCases)", "shared navigation rows"),
     (".frame(width: SettingsDesign.sidebarWidth)", "sidebar token usage"),
-    ("private let pieSize: CGFloat = 452", "fitted wheel preview"),
-    (".frame(width: 475, height: 500", "fixed wheel preview canvas"),
-    (".frame(width: SettingsDesign.actionPaneWidth)", "stable wheel action rail"),
-    ("private var controlList", "direct wheel actions"),
+    ("private let pieSize: CGFloat = 436", "fitted wheel preview"),
+    (".frame(width: wheelDiameter + 8, height: pieSize)", "preview occupies only the wheel's width"),
+    ("HStack(alignment: .top, spacing: SettingsDesign.contentInset)", "top-aligned wheel tab on the 24pt grid"),
+    ("Text(\"Dok \\(SettingsDesign.versionText)\")", "version in the sidebar footer"),
+    ("private var overviewColumn", "direct wheel actions"),
+    (".frame(height: pieSize, alignment: .top)\n        .settingsInsetSurface()", "right column is one card as tall as the preview"),
     ("private var recentAppsControl", "recent content controls"),
     ("private struct SettingsGroup", "shared low-contrast settings group"),
     (".settingsInsetSurface()", "semantic inset fill"),
     ("private struct SettingRow", "stable settings row primitive"),
-    (".frame(width: SettingsDesign.controlWidth, alignment: .trailing)", "trailing control alignment"),
+    (".frame(width: accessoryWidth, alignment: .trailing)", "trailing control alignment"),
+    ("var accessoryWidth: CGFloat = SettingsDesign.controlWidth", "default trailing control column"),
     ("HStack(alignment: .top, spacing: SettingsDesign.sectionSpacing)", "balanced general columns"),
     (".frame(width: SettingsDesign.generalContentWidth)", "fixed general settings grid"),
     ("SettingsGroup(title: Loc.string(\"settings.group.trigger\"))", "trigger section"),
@@ -61,6 +66,10 @@ assert "NSToolbarDelegate" not in APP, "the old preference toolbar must stay rem
 assert "configureSettingsToolbar" not in APP, "the old preference toolbar must stay removed"
 assert 'window.title = Loc.string("settings.windowTitle")' in APP
 assert "window.setContentSize(NSSize(width: 920, height: 520))" in APP
+assert "private func fitSettingsWindow(tab: SettingsTab, contentHeight height: CGFloat)" in APP
+assert "guard window.isVisible, !isFirstMeasurement," in APP, "reopening must not animate a resize"
+assert "rememberedHeight" in APP, "the window opens at the remembered page height"
+assert "hostingController.sizingOptions = []" in APP
 assert "window.titlebarAppearsTransparent = true" in APP
 assert "window.isOpaque = false" in APP
 assert "window.backgroundColor = .clear" in APP

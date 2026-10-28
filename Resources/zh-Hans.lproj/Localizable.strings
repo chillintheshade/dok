@@ -23,8 +23,6 @@
 "onboarding.openAccessibility" = "打开辅助功能设置";
 
 "openPanel.add" = "添加";
-"openPanel.folder.message" = "选择要添加到轮盘的文件夹";
-"openPanel.file.message" = "选择要添加到轮盘的文件";
 
 "link.title" = "添加网址";
 "link.message" = "输入网址，Dok 会使用默认浏览器打开。";
@@ -38,21 +36,11 @@
 "link.save" = "保存";
 "wheel.undoRemoval" = "撤销";
 "wheel.undoFull" = "请先腾出一个槽位再恢复";
-"link.invalid.title" = "网址无效";
 "link.invalid.message" = "请输入有效的 http 或 https 网址。";
 
-"settings.addApp" = "添加应用";
-"settings.addApp.subtitle" = "从应用程序选择";
-"settings.addFolder" = "添加文件夹";
-"settings.addFolder.subtitle" = "选择一个文件夹";
-"settings.addFile" = "添加文件";
-"settings.addFile.subtitle" = "选择文档或其他文件";
-"settings.addLink" = "添加网址";
-"settings.addLink.subtitle" = "使用默认浏览器打开";
 "settings.restoreDefaults" = "恢复默认";
 "settings.restoreDefaults.subtitle" = "重新放回系统常用项";
 "settings.restoreDefaults.confirm.title" = "恢复默认轮盘？";
-"settings.restoreDefaults.confirm.message" = "当前轮盘中的应用、文件、文件夹、网址和按键动作将被系统常用项替换。此操作无法撤销。";
 "settings.restoreDefaults.confirm.action" = "恢复默认";
 "settings.restoreDefaults.confirm.cancel" = "取消";
 "settings.recentApps" = "最近内容";
@@ -65,9 +53,7 @@
 "wheel.dragToCenterDelete" = "拖至中心删除";
 "wheel.quitRunningApp" = "退出";
 
-"appPicker.title" = "添加应用";
-"appPicker.done" = "完成";
-"appPicker.search" = "搜索应用...";
+"appPicker.search" = "搜索应用";
 
 "settings.group.trigger" = "唤出";
 "settings.group.playback" = "播放";
@@ -109,18 +95,9 @@
 
 "music.placeholder" = "音乐";
 
-"settings.addKeyAction" = "添加按键动作";
-"settings.addKeyAction.subtitle" = "一键执行组合键";
 "keyAction.title" = "设置按键动作";
-"keyAction.name" = "名称，例如：微信截图";
-"keyAction.combination" = "组合键";
 "keyAction.record" = "录入组合键";
-"keyAction.hint" = "点击录入后，按下含 ⌘、⌃ 或 ⌥ 的组合键；单按 Esc 取消。";
 "keyAction.conflict" = "不能与打开 Dok 的快捷键相同。";
-"keyAction.target" = "先切换到";
-"keyAction.currentApp" = "不切换应用（点击选择）";
-"keyAction.clearTarget" = "清除";
-"keyAction.targetHint" = "不指定时保持当前应用，直接发送组合键。微信截图等全局快捷键无需切换应用；微信需处于运行状态。";
 "keyAction.permission" = "录入和执行组合键需要为 Dok 开启辅助功能权限。";
 "keyAction.openAccessibility" = "打开辅助功能设置";
 "keyAction.error" = "按键动作未执行";
@@ -132,4 +109,39 @@
 "keyAction.needModifier" = "请同时按 ⌘、⌃ 或 ⌥";
 "keyAction.captureError" = "无法启动录入，请检查 Dok 的辅助功能权限。";
 
-"settings.glass.followsSystem" = "跟随系统";
+
+"settings.add" = "添加";
+"settings.add.subtitle" = "应用、文件、网址等";
+"settings.add.full" = "轮盘已满";
+"settings.restoreDefaults.inline" = "当前轮盘将被替换";
+"settings.slider.resetHint" = "双击恢复默认值";
+"settings.version" = "版本";
+"wheel.context.replace" = "替换";
+"wheel.context.replace.prompt" = "替换";
+"wheel.context.reveal" = "在访达中显示";
+"wheel.context.remove" = "移除";
+
+"keyAction.editTitle" = "编辑按键动作";
+"keyAction.nameLabel" = "名称";
+"keyAction.name" = "选填，留空自动命名";
+"keyAction.target" = "先切换到";
+"keyAction.noSwitch" = "不切换（当前应用）";
+"keyAction.runningApps" = "正在运行";
+"keyAction.chooseOther" = "选择其他应用";
+"keyAction.recordPrompt" = "点击录入组合键";
+"keyAction.recordCaption" = "需包含 ⌘、⌃ 或 ⌥";
+"keyAction.recordingCaption" = "按下组合键，Esc 取消";
+"keyAction.rerecordCaption" = "点击可重新录入";
+"keyAction.footnote" = "指定应用时会先切换过去再发送组合键；微信截图等全局快捷键无需指定。";
+"keyAction.openAccessibilityShort" = "去开启";
+
+"panel.done" = "完成";
+"add.kind.app" = "应用";
+"add.kind.file" = "文件";
+"add.kind.link" = "网址";
+"add.kind.keyAction" = "按键";
+"panel.dropTitle" = "拖入文件或文件夹";
+"panel.dropHint" = "可一次拖入多个";
+"panel.choose" = "选择";
+"panel.full" = "轮盘已满，先移除一些项目再添加。";
+"openPanel.message" = "选择要放进轮盘的文件或文件夹";

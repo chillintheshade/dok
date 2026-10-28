@@ -36,8 +36,8 @@ def main() -> None:
     assert "applyEmpty" in source, (
         "empty direct reads may only clear state when no persistent helper is running"
     )
-    assert "directRead(applyEmpty: helperProcess == nil)" in source, (
-        "helper output must win over restricted direct reads"
+    assert "directRead(applyEmpty: helperProcess == nil && !Self.adapterAvailable)" in source, (
+        "helper or adapter output must win over restricted direct reads"
     )
 
     assert "🎵" not in source, "temporary diagnostic music logs should not ship"

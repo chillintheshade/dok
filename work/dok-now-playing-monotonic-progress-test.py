@@ -34,8 +34,8 @@ def main() -> None:
         ("if abs(diff) < minorProgressRegressionTolerance", "bidirectional dead zone"),
         ("continuedDisplayedElapsed + diff * 0.08", "eight-percent gradual convergence"),
         ("resetDisplayedProgress(to: target, at: optimisticTimestamp)", "seek baseline reset"),
-        ("let playbackStateChanged = isPlaying != snapshot.playing", "pause and resume detection"),
-        ("if playbackStateChanged {\n                resetDisplayedProgressTracking()", "pause and resume baseline reset"),
+        ("guard isPlaying != playing else { return }", "pause and resume detection"),
+        ("isPlaying = playing\n        resetDisplayedProgressTracking()", "pause and resume baseline reset"),
         ("private func clearProgress()", "track and missing-data reset path"),
         ("playbackRate = nil\n        resetDisplayedProgressTracking()", "clear resets displayed baseline"),
     ]

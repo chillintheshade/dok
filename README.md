@@ -32,13 +32,16 @@ Dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Ap
 
 [View the changelog / 查看更新说明](CHANGELOG.md) — keyboard-action slots, website icons, undo, native-glass refinements, and Chinese search-input fixes / 按键动作槽位、网站图标、撤销、原生玻璃优化及中文搜索输入修正。
 
-## Latest Update: 1.4.2 / 最新更新：1.4.2
+## Latest Update: 1.5.0 / 最新更新：1.5.0
 
-- Consistent Dok display name across the app, menus, and settings / 应用、菜单和设置统一显示为 Dok
-- Builds and regression checks passed; visual animation verification remains pending / 构建与回归检查通过，动画实际效果仍待视觉验证
+- New ripple app icon / 全新「涟漪」图标
+- Music progress flows like liquid water, with a jelly-like hover / 音乐进度像一股液态的水，悬停果冻回弹
+- One unified add panel for apps, files, websites and key actions / 应用、文件、网址、按键动作统一在一个面板里添加
+- Redesigned key actions, live-snapping sliders, adaptive settings height / 按键动作重新设计、滑块实时吸附、设置窗口高度自适应
+- Names appear in the center only for files, websites and key actions / 只有文件、网址、按键动作在中心显示名字
 - Developer ID-signed, not Apple-notarized / 已使用 Developer ID 签名，未进行 Apple 公证
 
-[Release notes and download / 更新说明与下载 Dok 1.4.2](https://github.com/chillintheshade/dok/releases/tag/v1.4.2)
+[Release notes and download / 更新说明与下载 Dok 1.5.0](https://github.com/chillintheshade/dok/releases/tag/v1.5.0)
 
 ## Preview / 预览
 
@@ -79,9 +82,9 @@ Download the latest DMG from [GitHub Releases](https://github.com/chillintheshad
 
 从 [GitHub Releases](https://github.com/chillintheshade/dok/releases/latest) 下载最新 DMG，然后把 `Dok.app` 拖到 `/Applications`。
 
-Version 1.4.2 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
+Version 1.5.0 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
 
-1.4.2 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
+1.5.0 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
 
 ## Build From Source / 从源码构建
 

@@ -34,8 +34,9 @@ def main() -> None:
     wheel_window = WHEEL_WINDOW.read_text()
 
     app_state_requirements = [
-        ("var menuOpacity: Double = 1.0", "default menu glass opacity"),
-        ("menuOpacity = (try? c.decode(Double.self, forKey: .menuOpacity)) ?? 1.0", "opacity decoder fallback"),
+        ("static let defaultMenuOpacity: Double = 1.0", "default menu glass opacity"),
+        ("var menuOpacity: Double = defaultMenuOpacity", "opacity default used by new settings"),
+        ("menuOpacity = (try? c.decode(Double.self, forKey: .menuOpacity)) ?? Self.defaultMenuOpacity", "opacity decoder fallback"),
     ]
     for needle, reason in app_state_requirements:
         require(app_state, needle, reason)
@@ -77,7 +78,7 @@ def main() -> None:
         require(pie_view, needle, reason)
 
     settings_requirements = [
-        ('Loc.string("settings.glass.followsSystem")', "system glass status replaces local slider on macOS 27"),
+        ("if #unavailable(macOS 27.0) {", "macOS 27 hides the opacity row: system Liquid Glass has nothing to adjust"),
         ('title: Loc.string("settings.opacity")', "opacity slider label"),
         ("value: $appState.settings.menuOpacity", "opacity slider binding"),
         ("range: 0.15...1.0", "opacity slider range with visible low end"),
@@ -133,7 +134,7 @@ def main() -> None:
         ("self.ignoresMouseEvents = true", "hidden warm window cannot intercept pointer input"),
         ("revealWorkItem", "pending reveal work is cancellable during fast dismiss or repeated invocation"),
         ("dismissWorkItem", "pending dismiss completion cannot race a repeated invocation"),
-        ("self.orderOut(nil)", "dismissed screen-saver-level window leaves the active desktop space"),
+        ("orderOut(nil)", "dismissed wheel window leaves the active desktop space"),
     ]
     for needle, reason in window_requirements:
         require(wheel_window, needle, reason)
@@ -161,10 +162,9 @@ def main() -> None:
         [
             "revealWorkItem?.cancel()",
             "animator().alphaValue = MenuMotion.windowWarmupAlpha",
-            "self.orderOut(nil)",
-            "self.alphaValue = 1",
+            "self.finishHiding()",
         ],
-        "dismiss cancellation, fade, order-out, alpha reset sequence",
+        "dismiss cancellation, fade, then the single hidden transition",
     )
 
     app_requirements = [

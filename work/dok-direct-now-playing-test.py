@@ -61,11 +61,12 @@ def main() -> None:
     assert "guard !trackName.isEmpty else { return }" in previous
     assert "routePlaybackCommand(adapterCommand: 2, fallbackMediaKey: NX_KEYTYPE_PLAY)" in toggle
     assert "cancelPendingPlaybackIntent()" in toggle
-    assert "routePlaybackCommand(adapterCommand: 4, fallbackMediaKey: NX_KEYTYPE_NEXT)" in next_track
-    assert "routePlaybackCommand(adapterCommand: 5, fallbackMediaKey: NX_KEYTYPE_PREVIOUS)" in previous
+    skip = method(source, "private func sendSkipCommand", "private func scheduleSkipRetry")
+    assert "performSkip(.forward)" in next_track and "performSkip(.backward)" in previous
+    assert "routePlaybackCommand(adapterCommand: 4, fallbackMediaKey: NX_KEYTYPE_NEXT)" in skip
+    assert "routePlaybackCommand(adapterCommand: 5, fallbackMediaKey: NX_KEYTYPE_PREVIOUS)" in skip
     assert "isPlaying.toggle()" in toggle, "optimistic play state must remain"
-    assert "playingFrozenUntil" in toggle and "playingFrozenUntil" in next_track
-    assert "playingFrozenUntil" in previous
+    assert "playingFrozenUntil" in toggle and "playingFrozenUntil" in skip
     assert source.count("activatePreferredRunningMusicApp()") == 2, (
         "placeholder play needs one activation call plus the helper declaration"
     )
@@ -98,9 +99,11 @@ def main() -> None:
         "intent must be consumed once, and an already-playing payload must not send"
     )
 
-    helper = method(source, "private func handleHelperLine", "// MARK: - 进程内直读")
-    assert "if backend == .perlAdapter" in helper
-    assert "fulfillPendingPlaybackIntent" in helper
+    # Every adapter snapshot (stream line or one-shot get) can fulfil a pending play intent.
+    accept = method(source, "private func acceptAdapterSnapshot", "private func recordAdapterFailure")
+    assert accept.index("fulfillPendingPlaybackIntent") < accept.index("apply(snapshot)")
+    assert "acceptAdapterSnapshot(snapshot)" in method(source, "private func handleAdapterStreamLine", "private func acceptAdapterSnapshot")
+    assert "acceptAdapterSnapshot(Self.parseAdapterOutput(output))" in source
 
     assert "cancelPendingPlaybackIntent()" in next_track
     assert "cancelPendingPlaybackIntent()" in previous
@@ -112,7 +115,7 @@ def main() -> None:
         "private func sendAdapterPlaybackCommand",
         "private func activatePreferredRunningMusicApp",
     )
-    assert "activeBackend == .perlAdapter" in adapter
+    assert "guard adapterUsable," in adapter
     assert "try process.run()" in adapter
     assert "waitUntilExit" not in adapter
 

@@ -37,6 +37,7 @@
 		D237B8329142610E906658E3 /* stream.m in Sources */ = {isa = PBXBuildFile; fileRef = EF72F9B6DDF4389903FCA2CE /* stream.m */; };
 		D2BE5283F05DCF8CFCF928C8 /* helpers.h in Headers */ = {isa = PBXBuildFile; fileRef = CF4365EB56BA9BBF09044173 /* helpers.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		D740E2344FB1C2BFC4FC51A4 /* DockNotificationBadgeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B657B2F0EAE8B86CDA505C /* DockNotificationBadgeReader.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* QQMusicTitleReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5061728394A5B6C /* QQMusicTitleReader.swift */; };
 		DE7A4ACD99D6F90B1B04CD5E /* ImageIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 298F2CDD17FA29088F326258 /* ImageIO.framework */; };
 		DEDDF5938A265C7FC67039E1 /* MediaRemoteAdapter.h in Headers */ = {isa = PBXBuildFile; fileRef = 463ACD172DB30F042F6B3DFE /* MediaRemoteAdapter.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		DF3B3CD8DD9929A0AC55D287 /* Debounce.h in Headers */ = {isa = PBXBuildFile; fileRef = B1EB820B838128D55CF0627A /* Debounce.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -103,6 +104,7 @@
 		81BEAB3CCA46F01D78E3293C /* env.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = env.h; sourceTree = "<group>"; };
 		900C8EC6096EA13749FF7A3A /* Dok.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dok.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		91B657B2F0EAE8B86CDA505C /* DockNotificationBadgeReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockNotificationBadgeReader.swift; sourceTree = "<group>"; };
+		B1C2D3E4F5061728394A5B6C /* QQMusicTitleReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QQMusicTitleReader.swift; sourceTree = "<group>"; };
 		9B1F239C28D3CE4A045739E8 /* DokWheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DokWheelView.swift; sourceTree = "<group>"; };
 		A2BCCF5D7DCBC67AFCEAC6BE /* globals.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = globals.m; sourceTree = "<group>"; };
 		A304093AF678D129A3BC0C78 /* globals.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = globals.h; sourceTree = "<group>"; };
@@ -260,6 +262,7 @@
 				C19DCB4C820F43CA80552573 /* KeyActionService.swift */,
 				B488B75027B1739850580F97 /* AppState.swift */,
 				91B657B2F0EAE8B86CDA505C /* DockNotificationBadgeReader.swift */,
+				B1C2D3E4F5061728394A5B6C /* QQMusicTitleReader.swift */,
 				CDABB942932E834D57A6DAAE /* DokApp.swift */,
 				9B1F239C28D3CE4A045739E8 /* DokWheelView.swift */,
 				02D8229C0C95BB4EBCF27E0B /* DokWheelWindow.swift */,
@@ -410,6 +413,7 @@
 				BE312C42A1264226AA055389 /* KeyActionService.swift in Sources */,
 				FE97BDD2A3EA19D167FDCECB /* AppState.swift in Sources */,
 				D740E2344FB1C2BFC4FC51A4 /* DockNotificationBadgeReader.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* QQMusicTitleReader.swift in Sources */,
 				B76FDDE3DD2A93BCD88EF893 /* DokApp.swift in Sources */,
 				CC6389974E2032EDE025B583 /* DokWheelView.swift in Sources */,
 				61D9112508C59E2B03997668 /* DokWheelWindow.swift in Sources */,
@@ -583,7 +587,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -596,7 +600,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.5.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;
@@ -646,7 +650,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -665,7 +669,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.5.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;

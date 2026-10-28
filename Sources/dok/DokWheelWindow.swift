@@ -49,7 +49,20 @@ class DropTargetHostingView<Content: View>: NSHostingView<Content> {
 // MARK: - DokWheelWindow
 
 class DokWheelWindow: NSWindow {
+    /// The only source of truth for wheel visibility. Every show and close path
+    /// changes it through `setPresentation(_:)`.
+    enum Presentation: String {
+        case hidden, revealing, shown, dismissing
+    }
+
     let appState: AppState
+    private(set) var presentation: Presentation = .hidden
+    /// True from summon until dismissal begins; used by triggers to toggle and hold.
+    var isPresented: Bool { presentation == .revealing || presentation == .shown }
+    private var visibilityGuardTimer: Timer?
+    private var contentHiddenSince: Date?
+    /// Window on screen with invisible content for longer than this is ordered out.
+    private static let hiddenContentTolerance: TimeInterval = 0.2
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var clickMonitor: Any?
@@ -61,7 +74,6 @@ class DokWheelWindow: NSWindow {
     private var dismissWorkItem: DispatchWorkItem?
     private var contextMenuApplication: NSRunningApplication?
     private(set) var isContextMenuOpen = false
-    var onDismiss: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
     private let windowSize: CGFloat = DokWheelView.windowSize
@@ -108,8 +120,9 @@ class DokWheelWindow: NSWindow {
             defer: false
         )
 
-        // screenSaver 级别确保在全屏 app 上也能显示
-        self.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        // popUpMenu 级别配合 .fullScreenAuxiliary 即可显示在全屏 app 上，
+        // 同时让系统截图等覆盖层保持在轮盘之上。
+        self.level = .popUpMenu
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = false
@@ -138,7 +151,7 @@ class DokWheelWindow: NSWindow {
         revealWorkItem = nil
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
-        let wasAlreadyPresented = isVisible && appState.isMenuVisible && alphaValue > 0.99
+        let wasAlreadyPresented = presentation == .shown && isVisible
 
         let anchor: NSPoint
         if appState.settings.menuPosition == .screenCenter,
@@ -172,6 +185,7 @@ class DokWheelWindow: NSWindow {
         self.appState.snapshotRecentApps()
         self.appState.snapshotNotificationBadges()
 
+        setPresentation(.revealing)
         self.appState.isMenuVisible = false
         self.ignoresMouseEvents = true
         // Keep the native sampler alive while hiding its cached first frame.
@@ -184,7 +198,8 @@ class DokWheelWindow: NSWindow {
         self.contentView?.layoutSubtreeIfNeeded()
         self.displayIfNeeded()
         let reveal = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.presentation == .revealing else { return }
+            self.setPresentation(.shown)
             // DokWheelView owns the content transition. Setting the state inside a
             // second explicit animation transaction can make the same content
             // transition resolve twice while the native window is fading in.
@@ -672,6 +687,7 @@ class DokWheelWindow: NSWindow {
         removeMonitors()
         ignoresMouseEvents = true
 
+        setPresentation(.dismissing)
         appState.isMenuVisible = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = MenuMotion.contentDismissDuration
@@ -680,11 +696,9 @@ class DokWheelWindow: NSWindow {
         }
 
         let finishDismiss = DispatchWorkItem { [weak self] in
-            guard let self, !self.appState.isMenuVisible else { return }
-            self.orderOut(nil)
-            self.alphaValue = 1
-            self.onDismiss?()
+            guard let self, self.presentation == .dismissing else { return }
             self.dismissWorkItem = nil
+            self.finishHiding()
         }
         dismissWorkItem = finishDismiss
         DispatchQueue.main.asyncAfter(
@@ -700,18 +714,86 @@ class DokWheelWindow: NSWindow {
         revealWorkItem = nil
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
-        let openSettings = onOpenSettings // 先捕获，防止 onDismiss 释放 self 后丢失
+        let openSettings = onOpenSettings
         appState.selectedIndex = nil
         appState.selectedRecentAppIndex = nil
-        appState.isMenuVisible = false
         removeMonitors()
         ignoresMouseEvents = true
-        orderOut(nil)
-        alphaValue = 1
-        onDismiss?()
+        finishHiding()
         DispatchQueue.main.async {
             openSettings?()
         }
+    }
+
+    // MARK: - 可见性状态机
+
+    private func setPresentation(_ next: Presentation) {
+        guard presentation != next else { return }
+        NSLog("dok.wheel: %@ -> %@", presentation.rawValue, next.rawValue)
+        presentation = next
+        if next == .hidden {
+            stopVisibilityGuard()
+        } else {
+            startVisibilityGuard()
+        }
+    }
+
+    /// Hidden is ordered out *and* transparent: the native glass sampler does not
+    /// follow the SwiftUI content opacity, so a hidden window at full alpha would
+    /// appear as an empty glass disc if anything ordered it back in.
+    private func finishHiding() {
+        revealWorkItem?.cancel()
+        revealWorkItem = nil
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        removeMonitors()
+        appState.isMenuVisible = false
+        appState.centerControlHover = nil
+        ignoresMouseEvents = true
+        setPresentation(.hidden)
+        orderOut(nil)
+        alphaValue = MenuMotion.windowWarmupAlpha
+        appState.nowPlaying.menuDidDismiss()
+    }
+
+    override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        super.order(place, relativeTo: otherWin)
+        // Only showAt may bring the wheel on screen.
+        if place != .out, presentation == .hidden {
+            NSLog("dok.wheel: unexpected order-in while hidden; ordering out")
+            super.order(.out, relativeTo: 0)
+        }
+    }
+
+    private func startVisibilityGuard() {
+        guard visibilityGuardTimer == nil else { return }
+        contentHiddenSince = nil
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.checkVisibilityInvariant()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        visibilityGuardTimer = timer
+    }
+
+    private func stopVisibilityGuard() {
+        visibilityGuardTimer?.invalidate()
+        visibilityGuardTimer = nil
+        contentHiddenSince = nil
+    }
+
+    /// Invariant: the window is never on screen with invisible content for
+    /// longer than `hiddenContentTolerance`, whatever path led there.
+    private func checkVisibilityInvariant() {
+        guard isVisible, !appState.isMenuVisible else {
+            contentHiddenSince = nil
+            return
+        }
+        let since = contentHiddenSince ?? Date()
+        contentHiddenSince = since
+        guard Date().timeIntervalSince(since) > Self.hiddenContentTolerance else { return }
+        NSLog("dok.wheel: content hidden for >%.1fs in state %@; forcing order-out",
+              Self.hiddenContentTolerance, presentation.rawValue)
+        finishHiding()
     }
 
     private func removeMonitors() {
@@ -728,5 +810,6 @@ class DokWheelWindow: NSWindow {
 
     deinit {
         removeMonitors()
+        visibilityGuardTimer?.invalidate()
     }
 }

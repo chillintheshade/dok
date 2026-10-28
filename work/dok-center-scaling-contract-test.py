@@ -34,7 +34,7 @@ def main() -> None:
     )
 
     assert "previewOuterDiameter" in settings, "settings preview should calculate a fitted wheel diameter"
-    assert "min((pieSize - 28) / previewOuterDiameter" in settings, (
+    assert "min(previewAvailableHeight / previewOuterDiameter" in settings, (
         "settings preview should shrink large wheel radii to stay inside the preview stage"
     )
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""恢复默认：按钮原地展开确认，只有点“恢复”才执行；4 秒无操作自动收起，等于取消。"""
 from pathlib import Path
 
 
@@ -18,20 +19,26 @@ def main() -> None:
     zh = ZH.read_text()
     en = EN.read_text()
 
+    assert "NSAlert" not in settings, "settings no longer use system alerts"
     requirements = [
-        ("private func restoreDefaultsWithConfirmation()", "dedicated confirmation gate"),
-        ("alert.alertStyle = .warning", "destructive-action warning style"),
-        ("guard alert.runModal() == .alertFirstButtonReturn else { return }", "cancel-safe restore gate"),
-        ("restoreDefaultsWithConfirmation()", "restore tile invokes the confirmation gate"),
+        ("beginRestoreConfirmation()", "restore tile opens the inline confirmation"),
+        ("if confirmingRestore {\n                restoreConfirmation", "confirmation replaces the tile in place"),
+        ("Button(Loc.string(\"settings.restoreDefaults.confirm.action\"), action: restoreDefaults)",
+         "only the explicit restore button restores"),
+        ("private static let restoreConfirmTimeout: TimeInterval = 4", "auto-collapse delay"),
+        ("guard restoreCollapseToken == token, confirmingRestore, !restoreHovered else { return }\n"
+         "            cancelRestoreConfirmation()", "timeout cancels, never restores, and waits while hovered"),
         ("appState.settings.apps = Array(AppState.defaultApps().prefix(maxSlots))", "confirmed default restoration"),
     ]
     for needle, reason in requirements:
         require(settings, needle, reason)
+    collapse = settings.split("private func scheduleRestoreCollapse()", 1)[1].split("private func cancelRestoreConfirmation()", 1)[0]
+    assert "restoreDefaults()" not in collapse, "the timeout must never restore"
 
     for localization in (zh, en):
         for key in (
             "settings.restoreDefaults.confirm.title",
-            "settings.restoreDefaults.confirm.message",
+            "settings.restoreDefaults.inline",
             "settings.restoreDefaults.confirm.action",
             "settings.restoreDefaults.confirm.cancel",
         ):
