@@ -65,16 +65,21 @@ private struct SkipButtonFeedback: ViewModifier {
 /// 单行文字：放得下时居中静止；放不下时停顿后向左滑到末尾完整露出，停一下再滑回开头，
 /// 然后停住，不循环。只在轮盘可见时播放，每张新卡片、每次唤出各播放一次。
 /// 两侧渐隐由外层遮罩提供，静止时文字从 inset 处开始，开头不被淡掉。
+/// 文字宽度在首帧之前同步算出：若等排版后再量，新卡片推入时会先按短曲名居中、下一帧才跳成长曲名排版。
 private struct OverflowTitle: View {
     let text: String
-    let font: Font
+    let fontSize: CGFloat
     let width: CGFloat
     let inset: CGFloat
     let isActive: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var textWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
+
+    private var textWidth: CGFloat {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
 
     private static let speed: CGFloat = 30
     private static let minimumTravel: Double = 0.6
@@ -97,21 +102,12 @@ private struct OverflowTitle: View {
                     .frame(width: width)
             }
         }
-        .background(
-            label
-                .fixedSize()
-                .hidden()
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: TitleWidthKey.self, value: proxy.size.width)
-                })
-        )
-        .onPreferenceChange(TitleWidthKey.self) { textWidth = $0 }
         .task(id: "\(text)|\(isActive)|\(overflow > 0)|\(reduceMotion)") { await reveal() }
     }
 
     private var label: some View {
         Text(text)
-            .font(font)
+            .font(.system(size: fontSize, weight: .medium))
             .foregroundColor(.primary)
     }
 
@@ -132,13 +128,6 @@ private struct OverflowTitle: View {
             guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: travel)) { offset = stop.target }
         }
-    }
-}
-
-private struct TitleWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
 
@@ -1191,7 +1180,7 @@ struct DokWheelView: View {
             if let card {
                 OverflowTitle(
                     text: card.artist.isEmpty ? card.title : "\(card.title) - \(card.artist)",
-                    font: .system(size: musicTitleFontSize, weight: .medium),
+                    fontSize: musicTitleFontSize,
                     width: musicControllerWidth,
                     inset: MenuMotion.trackPushEdgeFade,
                     isActive: appState.isMenuVisible

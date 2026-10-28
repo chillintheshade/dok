@@ -118,13 +118,16 @@ def main() -> None:
     assert "guard !reduceMotion else { return .opacity }" in VIEW, "reduce motion keeps only the fade"
 
     # 长曲名：向左滑到末尾完整露出，停一下再滑回开头，然后停住；不循环。
-    title = VIEW.split("private struct OverflowTitle: View {", 1)[1].split("private struct TitleWidthKey", 1)[0]
+    title = VIEW.split("private struct OverflowTitle: View {", 1)[1].split("/// 每增加 1 晃动两个来回", 1)[0]
     assert "if overflow > 0 && !reduceMotion {" in title
     assert "(Self.startDelay, -overflow)" in title and "(travel + Self.endPause, 0)" in title
     assert "while" not in title and "label\n                    label" not in title, "plays once, never loops"
     assert "guard isActive, overflow > 0, !reduceMotion else { return }" in title
     assert "isActive: appState.isMenuVisible" in VIEW, "the reveal plays only while the wheel is visible"
     assert ".truncationMode(.tail)" in title
+    # 宽度同步算出，新卡片首帧就是最终排版，歌名随封面一起推入，不会中途跳一下。
+    assert "NSFont.systemFont(ofSize: fontSize, weight: .medium)" in title
+    assert "onPreferenceChange" not in title and "TitleWidthKey" not in VIEW
 
     # 收起期间换的歌：打开时直接显示，不推入；只有看着轮盘时换歌（或自己切歌）才推入。
     assert "hasSnapshotSincePresentation = false" in present and "hasSnapshotSincePresentation = false" in dismiss
