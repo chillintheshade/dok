@@ -29,7 +29,7 @@ def main() -> None:
 
     # 播放中逐帧外推；暂停或收起时停帧。
     assert "TimelineView(.animation(minimumInterval: nil," in VIEW, "the view should extrapolate every frame"
-    assert "paused: !nowPlaying.isPlaying || !appState.isMenuVisible" in VIEW
+    assert "paused: !nowPlaying.isPlaying || !interaction.isMenuVisible" in VIEW
     assert "musicProgressBoundaryLayer" in VIEW
     # 内圆与外圈的交接处就是底轨，不另画线；已播放段由系统透明液态玻璃渲染（原生边缘高光）。
     ring = VIEW.split("private func musicProgressBoundary(progress: Double) -> some View {", 1)[1].split("private var centerLabelCandidateID", 1)[0]

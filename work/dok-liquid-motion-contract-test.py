@@ -19,7 +19,7 @@ def forbid(source: str, needle: str, reason: str) -> None:
 
 def main() -> None:
     source = VIEW_SOURCE.read_text()
-    window_source = WINDOW_SOURCE.read_text()
+    window_source = WINDOW_SOURCE.read_text() + (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
 
     requirements = [
         ("enum MenuMotion", "named motion constants shared by view and window"),
@@ -36,8 +36,8 @@ def main() -> None:
         ("static let iconSelectedPushRatio: CGFloat = 0.018", "radial icon float ratio"),
         ("static let selectedDotScale: CGFloat = 1.62", "selected running dot breath"),
         ("private var materialOverlayLayers", "material overlays remain a stable surface"),
-        (".scaleEffect(appState.isMenuVisible ? 1 : 0.975)", "restrained content-only entry scale"),
-        (".opacity(appState.isMenuVisible ? 1 : 0)", "content-only opacity transition"),
+        (".scaleEffect(interaction.isMenuVisible ? 1 : 0.975)", "restrained content-only entry scale"),
+        (".opacity(interaction.isMenuVisible ? 1 : 0)", "content-only opacity transition"),
         ("let pushDist = iconOrbitRadius * MenuMotion.iconSelectedPushRatio", "radius-aware selected icon push"),
         (".scaleEffect(isSelected ? MenuMotion.iconSelectedScale : 1.0)", "selected icon focus scale"),
         (".scaleEffect(isSelected ? MenuMotion.selectedDotScale : 1.0)", "selected dot breathing"),
@@ -73,11 +73,11 @@ def main() -> None:
         require(source, needle, reason)
 
     window_requirements = [
-        ("self.appState.isMenuVisible = false", "hidden initial visible state before showing window"),
+        ("self.interaction.isMenuVisible = false", "hidden initial visible state before showing window"),
         ("self.alphaValue = MenuMotion.windowWarmupAlpha", "cached native glass frame hidden before presentation"),
         ("self.orderFrontRegardless()", "desktop-Space-safe window presentation"),
         ("MenuMotion.glassSamplerWarmupDelay", "deferred reveal waits for native sampling"),
-        ("self.appState.isMenuVisible = true", "visible state set after presentation"),
+        ("self.interaction.isMenuVisible = true", "visible state set after presentation"),
         ("context.duration = MenuMotion.windowRevealDuration", "window fade starts with content reveal"),
         ("context.timingFunction = CAMediaTimingFunction(name: .easeOut)", "window reveal uses an ease-out curve"),
         ("self.animator().alphaValue = 1", "window reaches full opacity through AppKit animation"),
@@ -101,7 +101,7 @@ def main() -> None:
     forbid(source, ".id(centerContentIdentity)", "center content forced rebuild")
     forbid(source, "revealMask", "synthetic expanding glass animation")
     forbid(source, ".delay(min(Double(index)", "staggered icon entry that makes the wheel feel assembled")
-    forbid(source, ".blur(radius: appState.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)", "whole-wheel blur that changes material brightness")
+    forbid(source, ".blur(radius: interaction.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)", "whole-wheel blur that changes material brightness")
     forbid(source, "LiquidSelectionShape", "rejected liquid selection animation")
     forbid(source, "LiquidMeniscusShape", "rejected target-side liquid meniscus")
     forbid(source, "wedgeLeadingPull", "rejected leading-pull liquid state")

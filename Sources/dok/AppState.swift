@@ -10,6 +10,8 @@ extension Notification.Name {
     static let mouseTriggerChanged = Notification.Name("dok.mouseTriggerChanged")
     static let hotkeyRecordingCancelled = Notification.Name("dok.hotkeyRecordingCancelled")
     static let settingsInputFocusRequested = Notification.Name("dok.settingsInputFocusRequested")
+    static let pinnedModeChanged = Notification.Name("dok.pinnedModeChanged")
+    static let replayGuideRequested = Notification.Name("dok.replayGuideRequested")
 }
 
 // MARK: - Data Models
@@ -406,6 +408,11 @@ enum InteractionMode: String, Codable, CaseIterable {
     case hold = "hold"
 }
 
+/// 轮盘是否常驻：桌面模式留在所有窗口之下，置顶模式平时是小圆点。
+enum PinnedMode: String, Codable, CaseIterable {
+    case off, desktop, floating
+}
+
 enum MenuPosition: String, Codable, CaseIterable {
     case followMouse = "followMouse"
     case screenCenter = "screenCenter"
@@ -554,6 +561,10 @@ struct AppSettings: Codable {
     var showMusicControl: Bool = true
     var mouseTrigger: MouseTrigger = .none
     var hasCompletedOnboarding: Bool = false
+    var pinnedMode: PinnedMode = .off
+    var pinnedDesktopCenter: CGPoint?
+    var pinnedOrbCenter: CGPoint?
+    var pinnedLocked: Bool = false
 
     // 自定义 decoder：新增字段缺失时用默认值，兼容旧版 settings.json
     init(from decoder: Decoder) throws {
@@ -577,7 +588,11 @@ struct AppSettings: Codable {
         showNotificationBadges = (try? c.decode(Bool.self, forKey: .showNotificationBadges)) ?? true
         showMusicControl = (try? c.decode(Bool.self, forKey: .showMusicControl)) ?? true
         mouseTrigger = (try? c.decode(MouseTrigger.self, forKey: .mouseTrigger)) ?? .none
-        hasCompletedOnboarding = (try? c.decode(Bool.self, forKey: .hasCompletedOnboarding)) ?? false
+        hasCompletedOnboarding = (try? c.decode(Bool.self, forKey: .hasCompletedOnboarding)) ?? true
+        pinnedMode = (try? c.decode(PinnedMode.self, forKey: .pinnedMode)) ?? .off
+        pinnedDesktopCenter = try? c.decode(CGPoint.self, forKey: .pinnedDesktopCenter)
+        pinnedOrbCenter = try? c.decode(CGPoint.self, forKey: .pinnedOrbCenter)
+        pinnedLocked = (try? c.decode(Bool.self, forKey: .pinnedLocked)) ?? false
     }
 
     init() {}
@@ -641,12 +656,8 @@ class AppState: ObservableObject {
         }
     }
     enum CenterControlHover { case settings, previous, playback, next, progress }
-    @Published var centerControlHover: CenterControlHover?
-    @Published var selectedIndex: Int? = nil
-    @Published var selectedRecentAppIndex: Int? = nil
     @Published private(set) var recentAppSnapshot: [AppItem] = []
     @Published private(set) var notificationBadgeSnapshot: DockNotificationBadgeSnapshot = .empty
-    @Published var isMenuVisible: Bool = false
     let nowPlaying = NowPlayingService()
     private var workspaceActivationObserver: NSObjectProtocol?
     private var recentActivatedBundleIdentifiers: [String] = []
@@ -749,7 +760,6 @@ class AppState: ObservableObject {
         recentAppSnapshot = settings.showRecentApps
             ? Array(eligible.prefix(settings.recentAppCount))
             : []
-        selectedRecentAppIndex = nil
     }
 
     func recentContentForSettingsPreview() -> [AppItem] {

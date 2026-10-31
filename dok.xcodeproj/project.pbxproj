@@ -8,6 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		BE312C42A1264226AA055389 /* KeyActionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C19DCB4C820F43CA80552573 /* KeyActionService.swift */; };
+		33D2D2719BE2576F9F2D2257 /* WheelInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE2576F9F2D2257743978E6 /* WheelInteraction.swift */; };
+		9B6333F3398B95E9FCD63237 /* PinnedWheelWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398B95E9FCD6323799CE89D1 /* PinnedWheelWindow.swift */; };
+		94E7D75B1262220927394BA5 /* PinnedDragTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1262220927394BA5738EE98A /* PinnedDragTracker.swift */; };
+		437D9FA3A50E25918EDFD7DC /* PinnedOrbWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50E25918EDFD7DC0D45E869 /* PinnedOrbWindow.swift */; };
+		48055262596768EB9397EA7D /* PinnedWheelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596768EB9397EA7DAF9A43B2 /* PinnedWheelController.swift */; };
+		1559F25895338C04A31A3053 /* FirstRunGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95338C04A31A3053A19D7A9B /* FirstRunGuide.swift */; };
 		A21DB7DAF233407FB0567981 /* WebsiteIconLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2FE6F8E3AAE47D6A803C819 /* WebsiteIconLoader.swift */; };
 		135F9392D2331B93BCA36155 /* MediaRemote.m in Sources */ = {isa = PBXBuildFile; fileRef = E20C41F50BC7C1A4E3197AAF /* MediaRemote.m */; };
 		17BA75C870AE2A91FE52A471 /* NowPlayingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD7764F3BD47EEBD88F2C546 /* NowPlayingService.swift */; };
@@ -78,6 +84,12 @@
 
 /* Begin PBXFileReference section */
 		C19DCB4C820F43CA80552573 /* KeyActionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyActionService.swift; sourceTree = "<group>"; };
+		9BE2576F9F2D2257743978E6 /* WheelInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WheelInteraction.swift; sourceTree = "<group>"; };
+		398B95E9FCD6323799CE89D1 /* PinnedWheelWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedWheelWindow.swift; sourceTree = "<group>"; };
+		1262220927394BA5738EE98A /* PinnedDragTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedDragTracker.swift; sourceTree = "<group>"; };
+		A50E25918EDFD7DC0D45E869 /* PinnedOrbWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedOrbWindow.swift; sourceTree = "<group>"; };
+		596768EB9397EA7DAF9A43B2 /* PinnedWheelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedWheelController.swift; sourceTree = "<group>"; };
+		95338C04A31A3053A19D7A9B /* FirstRunGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRunGuide.swift; sourceTree = "<group>"; };
 		F2FE6F8E3AAE47D6A803C819 /* WebsiteIconLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteIconLoader.swift; sourceTree = "<group>"; };
 		003301A85A16A3D4B09DB40A /* MediaRemote.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MediaRemote.h; sourceTree = "<group>"; };
 		02D8229C0C95BB4EBCF27E0B /* DokWheelWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DokWheelWindow.swift; sourceTree = "<group>"; };
@@ -258,6 +270,12 @@
 		BE87910AD0394DB0A50C44F0 /* dok */ = {
 			isa = PBXGroup;
 			children = (
+				9BE2576F9F2D2257743978E6 /* WheelInteraction.swift */,
+				398B95E9FCD6323799CE89D1 /* PinnedWheelWindow.swift */,
+				1262220927394BA5738EE98A /* PinnedDragTracker.swift */,
+				A50E25918EDFD7DC0D45E869 /* PinnedOrbWindow.swift */,
+				596768EB9397EA7DAF9A43B2 /* PinnedWheelController.swift */,
+				95338C04A31A3053A19D7A9B /* FirstRunGuide.swift */,
 				F2FE6F8E3AAE47D6A803C819 /* WebsiteIconLoader.swift */,
 				C19DCB4C820F43CA80552573 /* KeyActionService.swift */,
 				B488B75027B1739850580F97 /* AppState.swift */,
@@ -409,6 +427,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				33D2D2719BE2576F9F2D2257 /* WheelInteraction.swift in Sources */,
+				9B6333F3398B95E9FCD63237 /* PinnedWheelWindow.swift in Sources */,
+				94E7D75B1262220927394BA5 /* PinnedDragTracker.swift in Sources */,
+				437D9FA3A50E25918EDFD7DC /* PinnedOrbWindow.swift in Sources */,
+				48055262596768EB9397EA7D /* PinnedWheelController.swift in Sources */,
+				1559F25895338C04A31A3053 /* FirstRunGuide.swift in Sources */,
 				A21DB7DAF233407FB0567981 /* WebsiteIconLoader.swift in Sources */,
 				BE312C42A1264226AA055389 /* KeyActionService.swift in Sources */,
 				FE97BDD2A3EA19D167FDCECB /* AppState.swift in Sources */,
@@ -587,7 +611,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -600,7 +624,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.5.1;
+				MARKETING_VERSION = 1.6.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;
@@ -650,7 +674,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -669,7 +693,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.5.1;
+				MARKETING_VERSION = 1.6.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;

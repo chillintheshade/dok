@@ -60,7 +60,7 @@ def main() -> None:
     assert '[script.path, framework.path, "get"]' in source, "one-shot get warms the cache"
     assert source.count('"stream", "--no-diff"') == 1, "only one place may start a stream"
     update = re.search(r"private func updateAdapterStream\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert update and "isMenuPresented || pendingPlaybackIntent != nil" in update.group("body"), (
+    assert update and "consumers.contains(.summonedWheel) || pinnedNeedsStream || pendingPlaybackIntent != nil" in update.group("body"), (
         "the stream exists only while the wheel is open or a play intent waits; never resident"
     )
     assert "private static func parseAdapterOutput" in source, "get output needs its own parser"

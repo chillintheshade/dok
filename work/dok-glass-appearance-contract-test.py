@@ -115,7 +115,7 @@ def main() -> None:
     forbid(pie_view, "revealMask", "synthetic expanding material reveal")
     forbid(pie_view, "CABasicAnimation(keyPath: \"transform.scale\")", "AppKit sampler scale animation")
     forbid(pie_view, ".frame(width: diameter - 7, height: diameter - 7)", "duplicate inner outer-rim stroke")
-    forbid(pie_view, ".blur(radius: appState.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)", "material-changing whole-wheel blur animation")
+    forbid(pie_view, ".blur(radius: interaction.isMenuVisible ? 0 : MenuMotion.menuHiddenBlur)", "material-changing whole-wheel blur animation")
     forbid(pie_view, ".glassEffect(.regular.interactive()", "SwiftUI glass overlay should not be the primary wheel material")
     forbid(settings_view, "private var glassSurfaceFillOpacity", "old settings fake white glass fill")
     forbid(settings_view, "settingsGlassSurfaceLayer", "old settings fake glass surface layer")

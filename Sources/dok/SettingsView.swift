@@ -1787,7 +1787,7 @@ private struct KeyActionEditor: View {
 }
 
 /// 组合键展示用的大号键帽：单色浅底、细描边，底边略深模拟键帽厚度。
-private struct LargeKeyCap: View {
+struct LargeKeyCap: View {
     let text: String
 
     var body: some View {
@@ -1909,7 +1909,7 @@ private struct SettingRow<Accessory: View>: View {
 }
 
 /// 设置页内的胶囊按钮：次要为浅底，主要为实心反色，与分段控件的选中态一致。
-private struct SettingsPillButtonStyle: ButtonStyle {
+struct SettingsPillButtonStyle: ButtonStyle {
     var prominent = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -2290,6 +2290,19 @@ struct GeneralSettingsView: View {
 
     private var wheelGroup: some View {
         SettingsGroup(title: Loc.string("settings.group.wheel")) {
+            SettingRow(title: Loc.string("pinned.title")) {
+                SmoothSegmentedControl(
+                    selection: $appState.settings.pinnedMode,
+                    options: [(PinnedMode.off, Loc.string("pinned.off")), (.desktop, Loc.string("pinned.desktop")), (.floating, Loc.string("pinned.floating"))],
+                    label: Loc.string("pinned.title")
+                )
+                .onChange(of: appState.settings.pinnedMode) { _ in
+                    NotificationCenter.default.post(name: .pinnedModeChanged, object: nil)
+                }
+            }
+
+            SettingDivider()
+
             SettingRow(title: Loc.string("settings.position")) {
                 SmoothSegmentedControl(
                     selection: $appState.settings.menuPosition,
@@ -2375,6 +2388,14 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
             }
 
+            SettingDivider()
+
+            SettingRow(title: Loc.string("settings.replayGuide")) {
+                Button(Loc.string("settings.replayGuide.action")) {
+                    NotificationCenter.default.post(name: .replayGuideRequested, object: nil)
+                }
+                .buttonStyle(SettingsPillButtonStyle())
+            }
         }
         .frame(maxWidth: .infinity)
     }

@@ -10,7 +10,7 @@ SETTINGS = ROOT / "Sources" / "dok" / "SettingsView.swift"
 
 def main() -> None:
     pie = PIE_VIEW.read_text()
-    window = PIE_WINDOW.read_text()
+    window = (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
     settings = SETTINGS.read_text()
 
     assert "private var centerControlScale" in pie, "center controls should have their own radius-based scale"
@@ -29,7 +29,7 @@ def main() -> None:
     assert "private var centerMusicControlScale" in window, "hit testing should mirror visual center scale"
     assert "appState.settings.menuRadius / 130" in window, "center hit areas should follow wheel radius"
     assert "private var centerLensRadius" in window, "center hit areas should use the same fitted inner circle as visuals"
-    assert "appState.settings.iconSize / 48" not in window[window.find("private var centerMusicControlScale"):window.find("private enum CenterClickAction")], (
+    assert "appState.settings.iconSize / 48" not in window[window.find("private var centerMusicControlScale"):window.find("func slotIndex")], (
         "center hit areas should not depend on app icon size"
     )
 

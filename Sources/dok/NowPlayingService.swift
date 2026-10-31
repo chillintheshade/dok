@@ -5,6 +5,8 @@ import IOKit.hidsystem
 
 // MARK: - Now Playing Service
 
+enum NowPlayingConsumer: Hashable { case summonedWheel, pinnedWheel, pinnedOrb }
+
 /// 读取系统「正在播放」信息。
 ///
 /// macOS 只向 Apple 签名的进程开放 MediaRemote 元数据，因此本机进程内直读通常拿不到数据。
@@ -95,7 +97,13 @@ class NowPlayingService: ObservableObject {
     private var lastReportedPlaying: Bool?
     private var playingReapplyWorkItem: DispatchWorkItem?
     private var adapterFailures = 0
-    private var isMenuPresented = false
+    private var consumers = Set<NowPlayingConsumer>()
+    /// 有轮盘正显示着，也就是用户正看着。小圆点不算：收起期间换的歌，展开时直接显示。
+    private var isMenuPresented: Bool { !consumers.subtracting([.pinnedOrb]).isEmpty }
+    /// 常驻时没有播放器（或 adapter 不可用）就不留 perl 进程。
+    private var pinnedNeedsStream: Bool {
+        !consumers.isDisjoint(with: [.pinnedWheel, .pinnedOrb]) && runningMusicApp != nil && adapterUsable
+    }
     /// 本次打开后是否已收到过快照：在此之前到达的新曲目是收起期间换的，不推入。
     private var hasSnapshotSincePresentation = false
     private var nextCardAnimated = true
@@ -671,9 +679,22 @@ class NowPlayingService: ObservableObject {
 
     /// 轮盘弹出时调用：界面先显示缓存，同时启动推送（首帧约 20ms）。
     func refreshForMenuPresentation() {
+        beginConsuming(.summonedWheel)
+    }
+
+    /// 轮盘收起后结束推送（播放意图仍在等待时除外）。
+    func menuDidDismiss() {
+        endConsuming(.summonedWheel)
+    }
+
+    /// 唤出轮盘、常驻轮盘和小圆点共用一份数据，全部退出才结束推送。
+    func beginConsuming(_ consumer: NowPlayingConsumer) {
+        let wasWatching = isMenuPresented
+        consumers.insert(consumer)
         guard isObserving else { return }
-        isMenuPresented = true
-        hasSnapshotSincePresentation = false
+        if !wasWatching && isMenuPresented {
+            hasSnapshotSincePresentation = false
+        }
         directRead()
         updateAdapterStream()
         if currentSessionBundleIdentifier == QQMusicTitleReader.bundleIdentifier {
@@ -682,10 +703,16 @@ class NowPlayingService: ObservableObject {
         healResidentHelperOnPresentation()
     }
 
-    /// 轮盘收起后结束推送（播放意图仍在等待时除外）。
-    func menuDidDismiss() {
-        isMenuPresented = false
-        hasSnapshotSincePresentation = false
+    func endConsuming(_ consumer: NowPlayingConsumer) {
+        consumers.remove(consumer)
+        if !isMenuPresented {
+            hasSnapshotSincePresentation = false
+        }
+        updateAdapterStream()
+    }
+
+    /// 常驻时低频调用：播放器后来才打开或已退出时，补上或停掉推送。
+    func reevaluateStream() {
         updateAdapterStream()
     }
 
@@ -847,10 +874,10 @@ class NowPlayingService: ObservableObject {
 
     // MARK: - perl adapter 按需推送
 
-    /// 轮盘打开或播放意图等待期间运行 `stream --no-diff`，其余时间不留进程。
+    /// 轮盘打开、小圆点常驻或播放意图等待期间运行 `stream --no-diff`，其余时间不留进程。
     private func updateAdapterStream() {
         let needed = isObserving && Self.adapterAvailable
-            && (isMenuPresented || pendingPlaybackIntent != nil)
+            && (consumers.contains(.summonedWheel) || pinnedNeedsStream || pendingPlaybackIntent != nil)
         if needed {
             startAdapterStream()
         } else {

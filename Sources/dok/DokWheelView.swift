@@ -566,6 +566,7 @@ private struct SlotNotificationBadge: View {
 struct DokWheelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var appState: AppState
+    @ObservedObject var interaction: WheelInteractionState
     var onAppSelected: ((AppItem) -> Void)?
     var onSettingsTapped: (() -> Void)?
 
@@ -578,9 +579,11 @@ struct DokWheelView: View {
     @State private var centerLabelTask: DispatchWorkItem?
 
     init(appState: AppState,
+         interaction: WheelInteractionState,
          onAppSelected: ((AppItem) -> Void)? = nil,
          onSettingsTapped: (() -> Void)? = nil) {
         self.appState = appState
+        self.interaction = interaction
         self.nowPlaying = appState.nowPlaying
         self.onAppSelected = onAppSelected
         self.onSettingsTapped = onSettingsTapped
@@ -659,13 +662,13 @@ struct DokWheelView: View {
             animatedWheelLayers
         }
         .frame(width: Self.windowSize, height: Self.windowSize)
-        .onChange(of: appState.selectedIndex) { newIndex in
+        .onChange(of: interaction.selectedIndex) { newIndex in
             handleSelectionChange(newIndex)
         }
         .onChange(of: centerLabelCandidateID) { id in
             updateCenterLabel(id)
         }
-        .onChange(of: appState.isMenuVisible) { visible in
+        .onChange(of: interaction.isMenuVisible) { visible in
             if !visible {
                 withAnimation(.easeOut(duration: 0.08)) {
                     showWedge = false
@@ -682,10 +685,11 @@ struct DokWheelView: View {
             iconsLayer
             recentAppSatellitesLayer
         }
-        .scaleEffect(appState.isMenuVisible ? 1 : 0.975)
-        .opacity(appState.isMenuVisible ? 1 : 0)
-        .animation(MenuMotion.menuAnimation(isVisible: appState.isMenuVisible),
-                   value: appState.isMenuVisible)
+        .scaleEffect(interaction.isMenuVisible ? 1 : 0.975)
+        .scaleEffect(interaction.isDragging && !reduceMotion ? 1.02 : 1)
+        .opacity(interaction.isMenuVisible ? 1 : 0)
+        .animation(MenuMotion.menuAnimation(isVisible: interaction.isMenuVisible),
+                   value: interaction.isMenuVisible)
     }
 
     private var materialOverlayLayers: some View {
@@ -753,7 +757,7 @@ struct DokWheelView: View {
             let angle = (2 * Double.pi / Double(total)) * Double(index) - .pi / 2
             let x = center + iconOrbitRadius * cos(angle)
             let y = center - iconOrbitRadius * sin(angle)
-            let isSelected = appState.selectedIndex == index
+            let isSelected = interaction.selectedIndex == index
             let pushDist = iconOrbitRadius * MenuMotion.iconSelectedPushRatio
 
             ZStack {
@@ -813,7 +817,7 @@ struct DokWheelView: View {
             if index < offsets.count {
                 recentAppSatellite(
                     app: app,
-                    isSelected: appState.selectedRecentAppIndex == index
+                    isSelected: interaction.selectedRecentAppIndex == index
                 )
                 .position(
                     x: center + offsets[index].x,
@@ -894,7 +898,7 @@ struct DokWheelView: View {
         if showsMusicController, nowPlaying.duration != nil {
             // 播放中逐帧推进；暂停或轮盘收起时停帧，不耗电。
             TimelineView(.animation(minimumInterval: nil,
-                                    paused: !nowPlaying.isPlaying || !appState.isMenuVisible)) { context in
+                                    paused: !nowPlaying.isPlaying || !interaction.isMenuVisible || interaction.isOccluded)) { context in
                 if let progress = nowPlaying.playbackProgress(at: context.date) {
                     musicProgressBoundary(progress: progress)
                 }
@@ -910,7 +914,7 @@ struct DokWheelView: View {
     /// macOS 26 以下没有液态玻璃，退回一道细高光弧。
     @ViewBuilder
     private func musicProgressBoundary(progress: Double) -> some View {
-        let hovered = appState.centerControlHover == .progress
+        let hovered = interaction.centerControlHover == .progress
         let width = hovered ? MenuMotion.progressGlassHoverWidth : MenuMotion.progressGlassWidth
         let maxWidth = MenuMotion.progressGlassHoverWidth
         let side = musicProgressDiameter + maxWidth * 1.45
@@ -983,7 +987,7 @@ struct DokWheelView: View {
 
     /// 悬停项目里需要名字的那一个。应用和最近应用看图标就认得，不显示名字，中心保持音乐控制或齿轮。
     private var centerLabelCandidateID: UUID? {
-        guard let index = appState.selectedIndex, index < appState.settings.apps.count else { return nil }
+        guard let index = interaction.selectedIndex, index < appState.settings.apps.count else { return nil }
         let item = appState.settings.apps[index]
         return item.itemType == .app ? nil : item.id
     }
@@ -1037,7 +1041,7 @@ struct DokWheelView: View {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: centerSettingsIconSize, weight: .medium))
                     .modifier(SettingsGearStyle(resting: .tertiary,
-                                                hovered: appState.centerControlHover == .settings))
+                                                hovered: interaction.centerControlHover == .settings))
                     .transition(MenuMotion.centerContentTransition)
             }
 
@@ -1138,14 +1142,14 @@ struct DokWheelView: View {
                     .modifier(SkipButtonFeedback(
                         direction: .backward,
                         locked: nowPlaying.isSkipLocked,
-                        hovered: appState.centerControlHover == .previous,
+                        hovered: interaction.centerControlHover == .previous,
                         event: nowPlaying.skipEvent
                     ))
 
                 Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: musicPrimaryControlSize))
                     .foregroundStyle(.primary)
-                    .modifier(CenterControlHoverFeedback(active: appState.centerControlHover == .playback))
+                    .modifier(CenterControlHoverFeedback(active: interaction.centerControlHover == .playback))
 
                 Image(systemName: "forward.fill")
                     .font(.system(size: musicSecondaryControlSize))
@@ -1153,7 +1157,7 @@ struct DokWheelView: View {
                     .modifier(SkipButtonFeedback(
                         direction: .forward,
                         locked: nowPlaying.isSkipLocked,
-                        hovered: appState.centerControlHover == .next,
+                        hovered: interaction.centerControlHover == .next,
                         event: nowPlaying.skipEvent
                     ))
             }
@@ -1164,7 +1168,7 @@ struct DokWheelView: View {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 12.5 * centerMusicControlScale, weight: .medium))
                 .modifier(SettingsGearStyle(resting: .quaternary,
-                                            hovered: appState.centerControlHover == .settings))
+                                            hovered: interaction.centerControlHover == .settings))
         }
         .allowsHitTesting(false)
     }
@@ -1183,7 +1187,7 @@ struct DokWheelView: View {
                     fontSize: musicTitleFontSize,
                     width: musicControllerWidth,
                     inset: MenuMotion.trackPushEdgeFade,
-                    isActive: appState.isMenuVisible
+                    isActive: interaction.isMenuVisible
                 )
             } else {
                 Text(Loc.string("music.placeholder"))

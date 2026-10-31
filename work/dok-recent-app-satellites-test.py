@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STATE = (ROOT / "Sources" / "dok" / "AppState.swift").read_text()
 VIEW = (ROOT / "Sources" / "dok" / "DokWheelView.swift").read_text()
-WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text()
+WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text() + (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
 APP = (ROOT / "Sources" / "dok" / "DokApp.swift").read_text()
 SETTINGS = (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text()
 EN = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
@@ -54,18 +54,18 @@ def main() -> None:
         ("NativeGlassSamplingLayer(", "native glass satellite base"),
         ("if app.isRunning", "running-state indicator gate"),
         (".fill(.primary)", "running black/primary dot"),
-        ("appState.selectedRecentAppIndex == index", "satellite selection feedback"),
+        ("interaction.selectedRecentAppIndex == index", "satellite selection feedback"),
         ("static let windowSize: CGFloat = 640", "unclipped max-radius satellite window"),
     ]
     for needle, description in view_requirements:
         assert needle in VIEW, f"missing {description}"
 
-    assert WINDOW.find("let newRecentIndex = satelliteIndex") < WINDOW.find(
-        "newRecentIndex == nil ? slotIndex"
+    assert WINDOW.find("let newRecentIndex = hitTester.satelliteIndex") < WINDOW.find(
+        "newRecentIndex == nil ? hitTester.slotIndex"
     ), "satellite hit testing must precede fixed-slot/outside rejection"
     for needle, description in [
         ("self.appState.snapshotRecentApps()", "show-time snapshot"),
-        ("private func satelliteIndex", "independent circular satellite hit test"),
+        ("func satelliteIndex(at point", "independent circular satellite hit test"),
         ("let hitRadius = baseDiameter / 2 + 4", "circular hit radius"),
         ("func selectedAppForActivation() -> AppItem?", "shared selected-app resolver"),
         ("appState.recentAppSnapshot[index]", "satellite activation target"),

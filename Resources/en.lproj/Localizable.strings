@@ -18,9 +18,6 @@
 "menu.selectAll" = "Select All";
 
 "onboarding.title" = "Welcome to Dok";
-"onboarding.body" = "Quick start:\n1. Press %@ to open the wheel\n2. Move to an item and click to launch\n3. Right-click or press Esc to close\n4. Use the menu bar icon to open Settings\n\nTip: Accessibility permission is required for the global shortcut.";
-"onboarding.start" = "Get Started";
-"onboarding.openAccessibility" = "Open Accessibility Settings";
 
 "openPanel.add" = "Add";
 
@@ -145,3 +142,22 @@
 "panel.choose" = "Choose";
 "panel.full" = "The wheel is full. Remove something first.";
 "openPanel.message" = "Choose files or folders for the wheel";
+
+"pinned.title" = "Pinned";
+"pinned.off" = "Off";
+"pinned.desktop" = "Desktop";
+"pinned.floating" = "On top";
+"pinned.lock" = "Lock position";
+"pinned.unlock" = "Unlock position";
+
+"guide.press" = "Press it now";
+"guide.useWheel" = "Move to an icon and click to open";
+"guide.useWheel.hold" = "Hold the shortcut, move to an icon, and release to open";
+"guide.done" = "You can change the shortcut in Settings, or keep the wheel on your desktop";
+"guide.openSettings" = "Open Settings";
+"guide.start" = "Get Started";
+"guide.skip" = "Skip";
+"guide.openWheel" = "Open the wheel";
+"guide.changeHotkey" = "Change shortcut";
+"settings.replayGuide" = "Welcome guide";
+"settings.replayGuide.action" = "View";

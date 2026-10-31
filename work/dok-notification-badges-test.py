@@ -41,7 +41,7 @@ def main() -> None:
 
     assert "self.appState.snapshotNotificationBadges()" in WINDOW
     assert WINDOW.find("self.appState.snapshotNotificationBadges()") < WINDOW.find(
-        "self.appState.isMenuVisible = false"
+        "self.interaction.isMenuVisible = false"
     ), "badge snapshot must finish before presentation starts"
 
     assert VIEW.count("SlotNotificationBadge(text: badge") == 2, (

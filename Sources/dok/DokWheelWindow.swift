@@ -24,31 +24,37 @@ struct MusicProgressRingGeometry {
 
 // MARK: - 拖放目标视图
 
+protocol WheelDropTarget: AnyObject {
+    func handleDragUpdate(_ sender: NSDraggingInfo)
+    func handleDragExit()
+    func handleDrop(_ sender: NSDraggingInfo) -> Bool
+}
+
 class DropTargetHostingView<Content: View>: NSHostingView<Content> {
-    weak var wheelWindow: DokWheelWindow?
+    weak var dropTarget: WheelDropTarget?
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        wheelWindow?.handleDragUpdate(sender)
+        dropTarget?.handleDragUpdate(sender)
         return .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        wheelWindow?.handleDragUpdate(sender)
+        dropTarget?.handleDragUpdate(sender)
         return .copy
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        wheelWindow?.appState.selectedIndex = nil
+        dropTarget?.handleDragExit()
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        return wheelWindow?.handleDrop(sender) ?? false
+        return dropTarget?.handleDrop(sender) ?? false
     }
 }
 
 // MARK: - DokWheelWindow
 
-class DokWheelWindow: NSWindow {
+class DokWheelWindow: NSWindow, WheelDropTarget {
     /// The only source of truth for wheel visibility. Every show and close path
     /// changes it through `setPresentation(_:)`.
     enum Presentation: String {
@@ -56,6 +62,9 @@ class DokWheelWindow: NSWindow {
     }
 
     let appState: AppState
+    let interaction = WheelInteractionState()
+    private var hitTester: WheelHitTester { WheelHitTester(appState: appState) }
+    private var wheelCenter: NSPoint { NSPoint(x: frame.midX, y: frame.midY) }
     private(set) var presentation: Presentation = .hidden
     /// True from summon until dismissal begins; used by triggers to toggle and hold.
     var isPresented: Bool { presentation == .revealing || presentation == .shown }
@@ -75,28 +84,9 @@ class DokWheelWindow: NSWindow {
     private var contextMenuApplication: NSRunningApplication?
     private(set) var isContextMenuOpen = false
     var onOpenSettings: (() -> Void)?
+    var onDidHide: (() -> Void)?
 
     private let windowSize: CGFloat = DokWheelView.windowSize
-    private let centerControlHitRadius: CGFloat = 96
-    private var centerLensRadius: CGFloat {
-        let innerRadius = appState.settings.menuRadius - 50
-        let maxRadiusBeforeIcons = appState.settings.menuRadius - appState.settings.iconSize / 2 - 10
-        return min(max(innerRadius, 66), maxRadiusBeforeIcons)
-    }
-    private var centerMusicControlScale: CGFloat {
-        let radiusScale = min(max(appState.settings.menuRadius / 130, 0.88), 1.42)
-        let availableScale = (centerLensRadius * 2 - 18) / 142
-        return min(radiusScale, max(0.68, availableScale))
-    }
-    private var musicProgressRingHitTolerance: CGFloat { 6 * centerMusicControlScale }
-
-    private enum CenterClickAction {
-        case openSettings
-        case previousTrack
-        case togglePlayPause
-        case nextTrack
-        case seek(to: TimeInterval)
-    }
 
     // AVAudioPlayer 预缓冲，play() 近乎零延迟
     private static let tickPlayers: [AVAudioPlayer] = {
@@ -131,14 +121,14 @@ class DokWheelWindow: NSWindow {
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         self.acceptsMouseMovedEvents = true
 
-        let menuView = DokWheelView(appState: appState, onAppSelected: { [weak self] app in
+        let menuView = DokWheelView(appState: appState, interaction: interaction, onAppSelected: { [weak self] app in
             self?.launchApp(app)
             self?.dismiss()
         }, onSettingsTapped: { [weak self] in
             self?.dismissForSettings()
         })
         let hosting = DropTargetHostingView(rootView: menuView)
-        hosting.wheelWindow = self
+        hosting.dropTarget = self
         hosting.frame = NSRect(x: 0, y: 0, width: size, height: size)
         hosting.registerForDraggedTypes([.fileURL])
         self.contentView = hosting
@@ -146,7 +136,7 @@ class DokWheelWindow: NSWindow {
     }
 
     func showAt(point: NSPoint) {
-        appState.centerControlHover = nil
+        interaction.centerControlHover = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
@@ -172,8 +162,8 @@ class DokWheelWindow: NSWindow {
         }
 
         self.setFrameOrigin(NSPoint(x: x, y: y))
-        self.appState.selectedIndex = nil
-        self.appState.selectedRecentAppIndex = nil
+        self.interaction.selectedIndex = nil
+        self.interaction.selectedRecentAppIndex = nil
 
         guard !wasAlreadyPresented else {
             self.alphaValue = 1
@@ -186,7 +176,7 @@ class DokWheelWindow: NSWindow {
         self.appState.snapshotNotificationBadges()
 
         setPresentation(.revealing)
-        self.appState.isMenuVisible = false
+        self.interaction.isMenuVisible = false
         self.ignoresMouseEvents = true
         // Keep the native sampler alive while hiding its cached first frame.
         // A true zero alpha can stop desktop sampling on some compositor paths.
@@ -203,7 +193,7 @@ class DokWheelWindow: NSWindow {
             // DokWheelView owns the content transition. Setting the state inside a
             // second explicit animation transaction can make the same content
             // transition resolve twice while the native window is fading in.
-            self.appState.isMenuVisible = true
+            self.interaction.isMenuVisible = true
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = MenuMotion.windowRevealDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -243,7 +233,7 @@ class DokWheelWindow: NSWindow {
             NSLog("🖱️ Click: mouse=(%.0f,%.0f) center=(%.0f,%.0f) dist=%.1f",
                   mouseLocation.x, mouseLocation.y, center.x, center.y, distance)
 
-            if let action = self.centerClickAction(dx: dx, dy: dy, distance: distance) {
+            if let action = self.hitTester.centerAction(dx: dx, dy: dy) {
                 let np = self.appState.nowPlaying
                 switch action {
                 case .openSettings:
@@ -260,7 +250,7 @@ class DokWheelWindow: NSWindow {
                 return nil
             }
 
-            if self.isInsideCenterControls(dx: dx, dy: dy, distance: distance) {
+            if self.hitTester.isInsideCenterControls(dx: dx, dy: dy) {
                 return nil
             }
 
@@ -318,18 +308,18 @@ class DokWheelWindow: NSWindow {
 
     private func handleRightClick(_ event: NSEvent) {
         let screenPoint = NSEvent.mouseLocation
-        let recentIndex = satelliteIndex(at: screenPoint)
-        let fixedIndex = recentIndex == nil ? slotIndex(at: screenPoint) : nil
+        let recentIndex = hitTester.satelliteIndex(at: screenPoint, center: wheelCenter)
+        let fixedIndex = recentIndex == nil ? hitTester.slotIndex(at: screenPoint, center: wheelCenter) : nil
 
         let app: AppItem
         if let recentIndex, recentIndex < appState.recentAppSnapshot.count {
             app = appState.recentAppSnapshot[recentIndex]
-            appState.selectedRecentAppIndex = recentIndex
-            appState.selectedIndex = nil
+            interaction.selectedRecentAppIndex = recentIndex
+            interaction.selectedIndex = nil
         } else if let fixedIndex, fixedIndex < appState.settings.apps.count {
             app = appState.settings.apps[fixedIndex]
-            appState.selectedIndex = fixedIndex
-            appState.selectedRecentAppIndex = nil
+            interaction.selectedIndex = fixedIndex
+            interaction.selectedRecentAppIndex = nil
         } else {
             dismiss()
             return
@@ -362,7 +352,7 @@ class DokWheelWindow: NSWindow {
 
         isContextMenuOpen = false
         contextMenuApplication = nil
-        if isVisible && appState.isMenuVisible {
+        if isVisible && interaction.isMenuVisible {
             installGlobalInteractionMonitors()
         }
     }
@@ -374,12 +364,12 @@ class DokWheelWindow: NSWindow {
 
     func updateSelection() {
         let mouseLocation = NSEvent.mouseLocation
-        let newRecentIndex = satelliteIndex(at: mouseLocation)
-        let newIndex = newRecentIndex == nil ? slotIndex(at: mouseLocation) : nil
+        let newRecentIndex = hitTester.satelliteIndex(at: mouseLocation, center: wheelCenter)
+        let newIndex = newRecentIndex == nil ? hitTester.slotIndex(at: mouseLocation, center: wheelCenter) : nil
         let dx = mouseLocation.x - frame.midX
         let dy = mouseLocation.y - frame.midY
         let hoveredControl: AppState.CenterControlHover?
-        switch centerClickAction(dx: dx, dy: dy, distance: hypot(dx, dy)) {
+        switch hitTester.centerAction(dx: dx, dy: dy) {
         case .openSettings: hoveredControl = .settings
         case .previousTrack: hoveredControl = .previous
         case .togglePlayPause: hoveredControl = .playback
@@ -387,19 +377,19 @@ class DokWheelWindow: NSWindow {
         case .seek: hoveredControl = .progress
         case nil: hoveredControl = nil
         }
-        if appState.centerControlHover != hoveredControl {
-            appState.centerControlHover = hoveredControl
+        if interaction.centerControlHover != hoveredControl {
+            interaction.centerControlHover = hoveredControl
         }
 
         // 仅在值变化时更新，禁用 Core Animation 隐式动画防止闪烁
-        if appState.selectedIndex != newIndex
-            || appState.selectedRecentAppIndex != newRecentIndex {
+        if interaction.selectedIndex != newIndex
+            || interaction.selectedRecentAppIndex != newRecentIndex {
             NSAnimationContext.beginGrouping()
             NSAnimationContext.current.duration = 0
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            appState.selectedIndex = newIndex
-            appState.selectedRecentAppIndex = newRecentIndex
+            interaction.selectedIndex = newIndex
+            interaction.selectedRecentAppIndex = newRecentIndex
             CATransaction.commit()
             NSAnimationContext.endGrouping()
 
@@ -416,57 +406,6 @@ class DokWheelWindow: NSWindow {
                 }
             }
         }
-    }
-
-    private func slotIndex(at screenPoint: NSPoint) -> Int? {
-        let center = NSPoint(x: frame.midX, y: frame.midY)
-        let dx = screenPoint.x - center.x
-        let dy = screenPoint.y - center.y
-        let distance = hypot(dx, dy)
-        let appCount = appState.settings.apps.count
-        guard appCount > 0 else { return nil }
-
-        let innerRadius = appState.settings.menuRadius - 50
-        let outerRadius = appState.settings.menuRadius + 50
-        guard seekFraction(dx: dx, dy: dy) == nil,
-              !isInsideCenterControls(dx: dx, dy: dy, distance: distance),
-              distance >= innerRadius,
-              distance <= outerRadius else {
-            return nil
-        }
-
-        var angle = atan2(dy, dx)
-        if angle < 0 { angle += 2 * .pi }
-        let sliceAngle = (2 * Double.pi) / Double(appCount)
-        let adjustedAngle = fmod(angle + .pi / 2 + sliceAngle / 2, 2 * .pi)
-        return Int(adjustedAngle / sliceAngle) % appCount
-    }
-
-    private func satelliteIndex(at screenPoint: NSPoint) -> Int? {
-        let satellites = appState.recentAppSnapshot
-        guard !satellites.isEmpty else { return nil }
-
-        let outerRadius = appState.settings.menuRadius + 50
-        let baseDiameter = RecentAppSatelliteGeometry.baseDiameter(
-            for: appState.settings.iconSize
-        )
-        let offsets = RecentAppSatelliteGeometry.offsets(
-            count: satellites.count,
-            outerRadius: outerRadius,
-            mainIconSize: appState.settings.iconSize
-        )
-        let hitRadius = baseDiameter / 2 + 4
-
-        for (index, offset) in offsets.enumerated() {
-            let satelliteCenter = NSPoint(
-                x: frame.midX + offset.x,
-                y: frame.midY - offset.y
-            )
-            if hypot(screenPoint.x - satelliteCenter.x, screenPoint.y - satelliteCenter.y) <= hitRadius {
-                return index
-            }
-        }
-        return nil
     }
 
     // MARK: - 拖放处理
@@ -488,7 +427,7 @@ class DokWheelWindow: NSWindow {
         let outerRadius = appState.settings.menuRadius + 50
 
         let newIndex: Int?
-        if isInsideCenterControls(dx: dx, dy: dy, distance: distance)
+        if hitTester.isInsideCenterControls(dx: dx, dy: dy)
             || distance < innerRadius || distance > outerRadius {
             newIndex = nil
         } else {
@@ -499,60 +438,28 @@ class DokWheelWindow: NSWindow {
             newIndex = Int(adjustedAngle / sliceAngle) % appCount
         }
 
-        if appState.selectedIndex != newIndex {
-            appState.selectedIndex = newIndex
+        if interaction.selectedIndex != newIndex {
+            interaction.selectedIndex = newIndex
             if newIndex != nil && appState.settings.hapticFeedback {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             }
         }
     }
 
+    func handleDragExit() {
+        interaction.selectedIndex = nil
+    }
+
     func handleDrop(_ sender: NSDraggingInfo) -> Bool {
-        guard let index = appState.selectedIndex,
+        guard let index = interaction.selectedIndex,
               index < appState.settings.apps.count else {
             dismiss()
             return false
         }
 
-        let app = appState.settings.apps[index]
-
-        // A shortcut slot is an action, not a file drop destination.
-        guard app.itemType != .keyAction else { dismiss(); return false }
-
-        // 读取拖入的文件 URL
-        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [
-            .urlReadingFileURLsOnly: true
-        ]) as? [URL], !urls.isEmpty else {
-            dismiss()
-            return false
-        }
-
-        if appState.settings.soundEffects {
-            NSSound(named: "Tink")?.play()
-        }
-
+        let opened = appState.openDroppedFiles(from: sender, with: appState.settings.apps[index])
         dismiss()
-
-        // 用目标 app 打开文件
-        if app.itemType == .app,
-           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
-            let config = NSWorkspace.OpenConfiguration()
-            config.activates = true
-            NSWorkspace.shared.open(urls, withApplicationAt: appURL, configuration: config) { _, error in
-                if let error = error {
-                    NSLog("❌ 拖放打开失败: %@", error.localizedDescription)
-                } else {
-                    NSLog("✅ 已用 %@ 打开 %d 个文件", app.name, urls.count)
-                }
-            }
-        } else {
-            // 文件夹类型：直接打开文件
-            for url in urls {
-                NSWorkspace.shared.open(url)
-            }
-        }
-
-        return true
+        return opened
     }
 
     func applyAppearance() {
@@ -563,71 +470,17 @@ class DokWheelWindow: NSWindow {
         }
     }
 
-    private func isInsideCenterControls(dx: CGFloat, dy: CGFloat, distance: CGFloat) -> Bool {
-        if appState.nowPlaying.hasNowPlaying && appState.settings.showMusicControl {
-            let scale = centerMusicControlScale
-            return distance <= centerControlHitRadius * scale
-                && abs(dx) <= 90 * scale
-                && dy >= -96 * scale
-                && dy <= 72 * scale
-        }
-
-        return distance <= 64 * centerMusicControlScale
-    }
-
-    private func centerClickAction(dx: CGFloat, dy: CGFloat, distance: CGFloat) -> CenterClickAction? {
-        if appState.nowPlaying.hasNowPlaying && appState.settings.showMusicControl {
-            if let fraction = seekFraction(dx: dx, dy: dy),
-               let duration = appState.nowPlaying.duration {
-                return .seek(to: duration * fraction)
-            }
-
-            guard isInsideCenterControls(dx: dx, dy: dy, distance: distance) else { return nil }
-            let scale = centerMusicControlScale
-            if abs(dx) <= 34 * scale && dy >= -96 * scale && dy <= -50 * scale {
-                return .openSettings
-            }
-
-            if dy >= -58 * scale && dy <= -16 * scale {
-                if dx < -24 * scale { return .previousTrack }
-                if dx > 24 * scale { return .nextTrack }
-                return .togglePlayPause
-            }
-
-            return nil
-        }
-
-        guard isInsideCenterControls(dx: dx, dy: dy, distance: distance) else { return nil }
-        return .openSettings
-    }
-
-    private func seekFraction(dx: CGFloat, dy: CGFloat) -> Double? {
-        let nowPlaying = appState.nowPlaying
-        guard nowPlaying.hasNowPlaying,
-              appState.settings.showMusicControl,
-              nowPlaying.canSeek,
-              nowPlaying.duration != nil else { return nil }
-
-        return MusicProgressRingGeometry.fraction(
-            dx: dx,
-            dy: dy,
-            centerYOffset: 0,
-            radius: centerLensRadius,
-            tolerance: musicProgressRingHitTolerance
-        )
-    }
-
     func activateSelected() {
         guard let app = selectedAppForActivation() else { return }
         launchApp(app)
     }
 
     func selectedAppForActivation() -> AppItem? {
-        if let index = appState.selectedRecentAppIndex,
+        if let index = interaction.selectedRecentAppIndex,
            index < appState.recentAppSnapshot.count {
             return appState.recentAppSnapshot[index]
         }
-        if let index = appState.selectedIndex,
+        if let index = interaction.selectedIndex,
            index < appState.settings.apps.count {
             return appState.settings.apps[index]
         }
@@ -641,54 +494,28 @@ class DokWheelWindow: NSWindow {
                 KeyActionService.showError("keyAction.conflict")
                 return
             }
-            if appState.isMenuVisible { dismiss() }
+            if interaction.isMenuVisible { dismiss() }
             app.runKeyAction(ready: { [weak self] in
                 self?.isVisible != true
             })
             return
         }
-        if app.itemType == .fileOrFolder {
-            NSLog("📂 Opening: %@", app.path)
-            appState.recordOpenedFolder(app)
-            app.openFileOrFolder()
-            return
-        }
-
-        if app.itemType == .webLink {
-            NSLog("🔗 Opening: %@", app.path)
-            app.openWebLink()
-            return
-        }
-
-        NSLog("🚀 Launching: %@ (%@)", app.name, app.bundleIdentifier)
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
-            let config = NSWorkspace.OpenConfiguration()
-            config.activates = true
-            NSWorkspace.shared.openApplication(at: url, configuration: config) { _, error in
-                if let error = error {
-                    NSLog("  ❌ 启动失败: %@", error.localizedDescription)
-                } else {
-                    NSLog("  ✅ 已切换到: %@", app.name)
-                }
-            }
-        } else {
-            NSLog("  ❌ 找不到应用: %@", app.bundleIdentifier)
-        }
+        appState.openItem(app)
     }
 
     func dismiss() {
-        appState.centerControlHover = nil
+        interaction.centerControlHover = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
-        appState.selectedIndex = nil
-        appState.selectedRecentAppIndex = nil
+        interaction.selectedIndex = nil
+        interaction.selectedRecentAppIndex = nil
         removeMonitors()
         ignoresMouseEvents = true
 
         setPresentation(.dismissing)
-        appState.isMenuVisible = false
+        interaction.isMenuVisible = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = MenuMotion.contentDismissDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
@@ -709,14 +536,14 @@ class DokWheelWindow: NSWindow {
 
     /// 立即关闭（无动画），然后打开设置 — 确保设置窗口能拿到焦点
     func dismissForSettings() {
-        appState.centerControlHover = nil
+        interaction.centerControlHover = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
         let openSettings = onOpenSettings
-        appState.selectedIndex = nil
-        appState.selectedRecentAppIndex = nil
+        interaction.selectedIndex = nil
+        interaction.selectedRecentAppIndex = nil
         removeMonitors()
         ignoresMouseEvents = true
         finishHiding()
@@ -747,13 +574,14 @@ class DokWheelWindow: NSWindow {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
         removeMonitors()
-        appState.isMenuVisible = false
-        appState.centerControlHover = nil
+        interaction.isMenuVisible = false
+        interaction.centerControlHover = nil
         ignoresMouseEvents = true
         setPresentation(.hidden)
         orderOut(nil)
         alphaValue = MenuMotion.windowWarmupAlpha
         appState.nowPlaying.menuDidDismiss()
+        onDidHide?()
     }
 
     override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
@@ -784,7 +612,7 @@ class DokWheelWindow: NSWindow {
     /// Invariant: the window is never on screen with invisible content for
     /// longer than `hiddenContentTolerance`, whatever path led there.
     private func checkVisibilityInvariant() {
-        guard isVisible, !appState.isMenuVisible else {
+        guard isVisible, !interaction.isMenuVisible else {
             contentHiddenSince = nil
             return
         }

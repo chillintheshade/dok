@@ -45,7 +45,7 @@ def main() -> None:
     assert "self.setPresentation(.shown)" in show, "reveal completes the transition"
 
     guard = section(WINDOW, "private func checkVisibilityInvariant() {", "private func removeMonitors()")
-    assert "isVisible, !appState.isMenuVisible" in guard, "invariant compares window and content visibility"
+    assert "isVisible, !interaction.isMenuVisible" in guard, "invariant compares window and content visibility"
     assert "finishHiding()" in guard, "invariant violation orders the window out"
 
     assert "var isMenuOpen: Bool { wheelWindow?.isPresented ?? false }" in APP, "no duplicate open flag"

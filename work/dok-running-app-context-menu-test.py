@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text()
+WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text() + (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
 APP = (ROOT / "Sources" / "dok" / "DokApp.swift").read_text()
 EN = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 ZH = (ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings").read_text()
@@ -13,8 +13,8 @@ ZH = (ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings").read_text()
 def main() -> None:
     requirements = [
         ("self?.handleRightClick(event)", "local right-click routing"),
-        ("let recentIndex = satelliteIndex(at: screenPoint)", "satellite hit testing first"),
-        ("recentIndex == nil ? slotIndex(at: screenPoint) : nil", "fixed-slot fallback"),
+        ("let recentIndex = hitTester.satelliteIndex(at: screenPoint, center: wheelCenter)", "satellite hit testing first"),
+        ("recentIndex == nil ? hitTester.slotIndex(at: screenPoint, center: wheelCenter) : nil", "fixed-slot fallback"),
         ("appState.recentAppSnapshot[recentIndex]", "satellite context target"),
         ("app.itemType == .app", "file and folder exclusion"),
         ("app.isRunning", "running-app gate"),

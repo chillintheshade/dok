@@ -18,9 +18,6 @@
 "menu.selectAll" = "全选";
 
 "onboarding.title" = "欢迎使用 Dok！";
-"onboarding.body" = "快速上手：\n1. 按 %@ 唤出轮盘菜单\n2. 移动鼠标到目标应用，点击即可启动\n3. 右键或按 Esc 关闭菜单\n4. 点击菜单栏图标打开设置\n\n提示：需要授权「辅助功能」权限才能使用全局快捷键。";
-"onboarding.start" = "开始使用";
-"onboarding.openAccessibility" = "打开辅助功能设置";
 
 "openPanel.add" = "添加";
 
@@ -145,3 +142,22 @@
 "panel.choose" = "选择";
 "panel.full" = "轮盘已满，先移除一些项目再添加。";
 "openPanel.message" = "选择要放进轮盘的文件或文件夹";
+
+"pinned.title" = "常驻";
+"pinned.off" = "关闭";
+"pinned.desktop" = "桌面";
+"pinned.floating" = "置顶";
+"pinned.lock" = "锁定位置";
+"pinned.unlock" = "解锁位置";
+
+"guide.press" = "现在按一下试试";
+"guide.useWheel" = "移到图标上，点一下就能打开";
+"guide.useWheel.hold" = "按住快捷键，移到图标上，松开就打开";
+"guide.done" = "快捷键可以在设置里改，轮盘也可以常驻桌面";
+"guide.openSettings" = "去设置";
+"guide.start" = "开始使用";
+"guide.skip" = "跳过";
+"guide.openWheel" = "点这里打开轮盘";
+"guide.changeHotkey" = "换个快捷键";
+"settings.replayGuide" = "重新查看引导";
+"settings.replayGuide.action" = "查看";

@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STATE = (ROOT / "Sources" / "dok" / "AppState.swift").read_text()
 SETTINGS = (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text()
-WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text()
+WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text() + (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
 APP = (ROOT / "Sources" / "dok" / "DokApp.swift").read_text()
 EN = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 ZH = (ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings").read_text()
@@ -37,7 +37,7 @@ def main() -> None:
     ]:
         assert needle in SETTINGS, f"missing {description}"
 
-    assert "appState.recordOpenedFolder(app)" in WINDOW
+    assert "recordOpenedFolder(app)" in WINDOW
     assert "app.openWebLink()" in WINDOW
     assert APP.count("appState.recordOpenedFolder(app)") == 2
     assert APP.count("app.openWebLink()") == 2

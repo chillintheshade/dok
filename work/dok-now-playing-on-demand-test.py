@@ -17,12 +17,12 @@ def body(signature: str) -> str:
 
 
 def main() -> None:
-    present = body("func refreshForMenuPresentation()")
-    for needle in ["isMenuPresented = true", "updateAdapterStream()", "healResidentHelperOnPresentation()"]:
+    present = body("func beginConsuming(_ consumer: NowPlayingConsumer)")
+    for needle in ["consumers.insert(consumer)", "updateAdapterStream()", "healResidentHelperOnPresentation()"]:
         assert needle in present, f"summon must run: {needle}"
 
-    dismiss = body("func menuDidDismiss()")
-    assert "isMenuPresented = false" in dismiss and "updateAdapterStream()" in dismiss
+    dismiss = body("func endConsuming(_ consumer: NowPlayingConsumer)")
+    assert "consumers.remove(consumer)" in dismiss and "updateAdapterStream()" in dismiss
     hide = WINDOW.split("private func finishHiding() {", 1)[1].split("override func order(", 1)[0]
     assert "appState.nowPlaying.menuDidDismiss()" in hide, "hidden wheel ends its stream"
 
@@ -123,7 +123,7 @@ def main() -> None:
     assert "(Self.startDelay, -overflow)" in title and "(travel + Self.endPause, 0)" in title
     assert "while" not in title and "label\n                    label" not in title, "plays once, never loops"
     assert "guard isActive, overflow > 0, !reduceMotion else { return }" in title
-    assert "isActive: appState.isMenuVisible" in VIEW, "the reveal plays only while the wheel is visible"
+    assert "isActive: interaction.isMenuVisible" in VIEW, "the reveal plays only while the wheel is visible"
     assert ".truncationMode(.tail)" in title
     # 宽度同步算出，新卡片首帧就是最终排版，歌名随封面一起推入，不会中途跳一下。
     assert "NSFont.systemFont(ofSize: fontSize, weight: .medium)" in title

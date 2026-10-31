@@ -28,8 +28,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         "dok.settings.windowHeight.\(tab.rawValue)"
     }
     var hotKeyRef: EventHotKeyRef?
+    private var escapeHotKeyRef: EventHotKeyRef?
     /// Derived from the wheel's state machine so the trigger never disagrees with the window.
     var isMenuOpen: Bool { wheelWindow?.isPresented ?? false }
+    private var pinnedController: PinnedWheelController?
+    private var firstRunGuide: FirstRunGuideController?
+    private var pinnedMenuItems: [(PinnedMode, NSMenuItem)] = []
     private var settingsKeyMonitor: Any?
     private var settingsDeactivationWorkItem: DispatchWorkItem?
     private var settingsActivationGeneration = 0
@@ -81,18 +85,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             name: .mouseTriggerChanged, object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(replayGuideRequested),
+            name: .replayGuideRequested, object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(pinnedModeDidChange),
+            name: .pinnedModeChanged, object: nil
+        )
+
         // 音乐显示关闭时不启动常驻 helper 或后台巡检。
         appState.nowPlaying.setObservationEnabled(appState.settings.showMusicControl)
 
         // 注册鼠标按键触发
         setupMouseTrigger()
 
+        let pinned = PinnedWheelController(appState: appState)
+        pinned.onOpenSettings = { [weak self] in self?.openSettings() }
+        pinned.onExpansionChanged = { [weak self] in self?.updateEscapeHotKey() }
+        pinnedController = pinned
+        pinned.apply(mode: appState.settings.pinnedMode)
+
         NSLog("✅ 轮盘已启动！按 %@ 打开菜单", appState.settings.hotkey.displayString)
 
         // 首次启动引导
         if !appState.settings.hasCompletedOnboarding {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.showOnboarding()
+                self.startFirstRunGuide()
             }
         }
     }
@@ -101,26 +121,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appState.nowPlaying.stopObserving()
     }
 
-    func showOnboarding() {
-        let alert = NSAlert()
-        alert.messageText = Loc.string("onboarding.title")
-        alert.informativeText = Loc.string("onboarding.body", appState.settings.hotkey.displayString)
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: Loc.string("onboarding.start"))
-        alert.addButton(withTitle: Loc.string("onboarding.openAccessibility"))
+    private func startFirstRunGuide() {
+        let guide = firstRunGuide ?? FirstRunGuideController(appState: appState)
+        guide.onShowWheel = { [weak self] in self?.showDok() }
+        guide.onOpenSettings = { [weak self] in self?.openSettings() }
+        firstRunGuide = guide
+        guide.start()
+    }
 
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-            NSWorkspace.shared.open(url)
-        }
-
-        appState.settings.hasCompletedOnboarding = true
-
-        // 首次启动弹出轮盘，让用户直观看到效果
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.showDok()
-        }
+    @objc private func replayGuideRequested() {
+        startFirstRunGuide()
     }
 
     @objc func mouseTriggerDidChange() {
@@ -215,6 +225,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func handleMouseTriggerDown(buttonNumber: Int) {
         guard buttonNumber == appState.settings.mouseTrigger.buttonNumber else { return }
+        if pinnedController?.isWheelExpanded == true {
+            pinnedController?.collapse()
+            return
+        }
 
         if appState.settings.interactionMode == .hold {
             if !isMenuOpen { showDok() }
@@ -265,8 +279,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    @objc func pinnedModeDidChange() {
+        pinnedController?.apply(mode: appState.settings.pinnedMode)
+        updatePinnedMenuItems()
+    }
+
+    private func updatePinnedMenuItems() {
+        for (mode, item) in pinnedMenuItems {
+            item.state = mode == appState.settings.pinnedMode ? .on : .off
+        }
+    }
+
+    @objc private func choosePinnedMode(_ sender: NSMenuItem) {
+        guard let mode = pinnedMenuItems.first(where: { $0.1 === sender })?.0 else { return }
+        appState.settings.pinnedMode = mode
+        pinnedModeDidChange()
+    }
+
     @objc func appearanceDidChange() {
         wheelWindow?.applyAppearance()
+        pinnedController?.applyAppearance()
         applySettingsAppearance()
     }
 
@@ -405,6 +437,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        let pinnedItem = NSMenuItem(title: Loc.string("pinned.title"), action: nil, keyEquivalent: "")
+        let pinnedMenu = NSMenu()
+        pinnedMenuItems = [(PinnedMode.off, "pinned.off"), (.desktop, "pinned.desktop"), (.floating, "pinned.floating")].map { mode, key in
+            let item = NSMenuItem(title: Loc.string(key), action: #selector(choosePinnedMode(_:)), keyEquivalent: "")
+            item.target = self
+            pinnedMenu.addItem(item)
+            return (mode, item)
+        }
+        pinnedItem.submenu = pinnedMenu
+        menu.addItem(pinnedItem)
+        updatePinnedMenuItems()
+
+        menu.addItem(NSMenuItem.separator())
+
         let settingsItem = NSMenuItem(title: Loc.string("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -458,8 +504,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     guard let userData = userData else { return OSStatus(eventNotHandledErr) }
                     let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
                     let eventKind = GetEventKind(event)
+                    var pressedID = EventHotKeyID()
+                    GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                      nil, MemoryLayout<EventHotKeyID>.size, nil, &pressedID)
                     DispatchQueue.main.async {
-                        if eventKind == UInt32(kEventHotKeyPressed) {
+                        if pressedID.id == 2 {
+                            if eventKind == UInt32(kEventHotKeyPressed) { delegate.handleEscapeHotKey() }
+                        } else if eventKind == UInt32(kEventHotKeyPressed) {
                             delegate.handleHotKeyDown()
                         } else if eventKind == UInt32(kEventHotKeyReleased) {
                             delegate.handleHotKeyUp()
@@ -489,8 +540,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - 快捷键事件
 
+    /// Dok 不在前台时收不到按键，轮盘显示期间临时把 Esc 注册成热键；不需要任何权限，收起就还给系统。
+    private func updateEscapeHotKey() {
+        let needed = isMenuOpen || pinnedController?.wantsEscape == true
+        if needed, escapeHotKeyRef == nil {
+            let id = EventHotKeyID(signature: OSType(0x50494531), id: 2)
+            RegisterEventHotKey(53, 0, id, GetApplicationEventTarget(), 0, &escapeHotKeyRef)
+        } else if !needed, let ref = escapeHotKeyRef {
+            UnregisterEventHotKey(ref)
+            escapeHotKeyRef = nil
+        }
+    }
+
+    func handleEscapeHotKey() {
+        if isMenuOpen {
+            closeDok()
+        } else {
+            pinnedController?.collapse()
+        }
+    }
+
     func handleHotKeyDown() {
         NSLog("🔑 handleHotKeyDown: mode=%@, isMenuOpen=%d", appState.settings.interactionMode.rawValue, isMenuOpen)
+        // 置顶轮盘已展开：这一按只收起它，不再弹一个。
+        if pinnedController?.isWheelExpanded == true {
+            pinnedController?.collapse()
+            return
+        }
+        firstRunGuide?.hotkeyDidFire()
         if appState.settings.interactionMode == .hold {
             // 按住模式：按下 → 显示菜单
             if !isMenuOpen {
@@ -550,6 +627,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             created.onOpenSettings = { [weak self] in
                 self?.openSettings()
             }
+            created.onDidHide = { [weak self] in
+                self?.updateEscapeHotKey()
+                self?.firstRunGuide?.wheelDidClose()
+            }
             wheelWindow = created
             window = created
         }
@@ -557,6 +638,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let mouseLocation = NSEvent.mouseLocation
         appState.nowPlaying.refreshForMenuPresentation()
         window.showAt(point: mouseLocation)
+        updateEscapeHotKey()
         NSLog("✅ showDok: window shown at (%.0f, %.0f)", mouseLocation.x, mouseLocation.y)
     }
 

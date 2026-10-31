@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE = (ROOT / "Sources" / "dok" / "NowPlayingService.swift").read_text()
-WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text()
+WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text() + (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
 
 
 def fraction(dx: float, dy: float, center_y: float, radius: float, tolerance: float):
@@ -38,7 +38,7 @@ def main() -> None:
     assert ".seek(to: duration * fraction)" in WINDOW
     assert "np.seek(to: seconds)" in WINDOW
     selection = WINDOW[WINDOW.index("func updateSelection()"):WINDOW.index("// MARK: - 拖放处理")]
-    assert selection.index("seekFraction(dx: dx, dy: dy)") < selection.index("isInsideCenterControls"), (
+    assert WINDOW.index("guard seekFraction(dx: dx, dy: dy) == nil") < WINDOW.index("!isInsideCenterControls(dx: dx, dy: dy)"), (
         "seek ring must win before center controls and slot selection"
     )
 
