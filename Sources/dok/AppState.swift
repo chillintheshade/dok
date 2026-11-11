@@ -596,6 +596,20 @@ struct AppSettings: Codable {
     }
 
     init() {}
+
+    /// 读取旧版设置后的修正。只改需要改的字段，其余原样保留。
+    func migrated() -> AppSettings {
+        var settings = self
+        let retiredHotkeys: [HotkeyConfig] = [
+            HotkeyConfig(keyCode: 49, modifiers: .option),             // ⌥Space：旧版保存的无效快捷键
+            HotkeyConfig(keyCode: 2, modifiers: [.command, .shift]),   // ⌘⇧D：旧默认值
+            HotkeyConfig(keyCode: 50, modifiers: [.command]),          // ⌘`：会抢占系统的同应用窗口切换
+        ]
+        if retiredHotkeys.contains(settings.hotkey) {
+            settings.hotkey = HotkeyConfig() // 默认 ⌘Esc
+        }
+        return settings
+    }
 }
 
 // MARK: - Icon Cache
@@ -679,20 +693,8 @@ class AppState: ObservableObject {
 
     init() {
         if let data = try? Data(contentsOf: settingsURL),
-           var decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            // 迁移：修复旧版保存的无效快捷键（⌥Space）
-            if decoded.hotkey.keyCode == 49 && decoded.hotkey.modifiers == .option {
-                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘Esc
-            }
-            // 迁移：如果用户仍使用旧默认 ⌘⇧D，切换到新的默认 ⌘Esc。
-            if decoded.hotkey.keyCode == 2 && decoded.hotkey.modifiers == [.command, .shift] {
-                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘Esc
-            }
-            // 迁移：旧默认 ⌘· 会抢占 macOS 的同应用窗口切换快捷键。
-            if decoded.hotkey.keyCode == 50 && decoded.hotkey.modifiers == [.command] {
-                decoded.hotkey = HotkeyConfig() // 重置为默认 ⌘Esc
-            }
-            self.settings = decoded
+           let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
+            self.settings = decoded.migrated()
         } else {
             self.settings = AppSettings()
             // Add some default apps

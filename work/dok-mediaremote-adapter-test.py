@@ -67,18 +67,13 @@ def main() -> None:
     assert "private static func parseAdapterStreamLine" in source, "stream lines need their own parser"
     assert ".fragmentsAllowed" in source, "get prints a bare null when nothing is playing"
 
-    # perl 路可用时不启动常驻兜底；连续失败后才启用 swift 工具链。
-    start = re.search(r"private func startHelper\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert start, "startHelper body not found"
-    assert "!adapterUsable" in start.group("body"), "swift helper only runs when perl is not usable"
+    # perl adapter 是唯一的元数据来源。连续失败后播放命令退回媒体键，下一次唤出照常重试。
     assert "private static let adapterFailureLimit = 3" in source
-
-    # 4. 兜底 helper 快速失败时退避重试，而不是永久放弃
-    restart = re.search(r"private func scheduleHelperRestart\(quickFailure: Bool\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert restart, "scheduleHelperRestart body not found"
-    body = restart.group("body")
-    assert "helperRetryDelay * 2" in body and "Self.helperMaxRetryDelay" in body, "exponential capped backoff"
-    assert "backendQueue" not in source, "an exhausted queue must never disable the fallback forever"
+    assert "Self.adapterAvailable && adapterFailures < Self.adapterFailureLimit" in source
+    accept = re.search(r"private func acceptAdapterSnapshot\(_ snapshot: NowPlayingSnapshot\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert accept and "adapterFailures = 0" in accept.group("body"), "one good read restores the adapter"
+    for gone in ["startHelper", "helperSwiftURL", "backendQueue", "/usr/bin/swift"]:
+        assert gone not in source, f"no second metadata backend: {gone}"
 
     print("MediaRemote adapter integration contract passed.")
 

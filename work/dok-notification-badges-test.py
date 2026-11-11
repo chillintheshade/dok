@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dock 通知角标的数据、快照、显示和设置契约。"""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,7 +9,7 @@ READER = (ROOT / "Sources" / "dok" / "DockNotificationBadgeReader.swift").read_t
 STATE = (ROOT / "Sources" / "dok" / "AppState.swift").read_text()
 WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text()
 VIEW = (ROOT / "Sources" / "dok" / "DokWheelView.swift").read_text()
-SETTINGS = (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text()
+SETTINGS = settings_source()
 EN = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 ZH = (ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings").read_text()
 
@@ -28,6 +29,15 @@ def main() -> None:
     ]:
         assert needle in READER, f"missing {description}"
     assert "AXIsProcessTrustedWithOptions" not in READER, "badge lookup must never prompt"
+
+    # Two apps can share a Dock title (a second WeChat copy is also “微信”): an item that reports
+    # its URL is matched by path only, and a title is recorded only for items without a URL.
+    insert = READER[READER.index("fileprivate mutating func insert"):READER.index("private static func normalizedPath")]
+    url_branch = insert[insert.index("if let url {"):insert.index("if let title")]
+    assert "byTitle" not in url_branch and "return" in url_branch, "URL-bearing Dock items never match by title"
+    assert "ambiguousBundleIdentifiers.insert(bundleIdentifier)" in url_branch, (
+        "copies sharing one bundle identifier are told apart by path only"
+    )
 
     for needle, description in [
         ("var showNotificationBadges: Bool = true", "default-on badge setting"),
@@ -51,7 +61,7 @@ def main() -> None:
     assert "y: -iconSize * 0.36" in VIEW, "main badge must sit at top-right"
     assert "y: -baseDiameter * 0.31" in VIEW, "satellite badge must sit at top-right"
     assert 'Image(systemName: "clock.fill")' not in VIEW, "satellites no longer carry a clock badge"
-    assert 'clock.fill' not in (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text(), "nor in the settings preview"
+    assert 'clock.fill' not in settings_source(), "nor in the settings preview"
 
     assert '$appState.settings.showNotificationBadges' in SETTINGS
     assert 'Loc.string("settings.notificationBadges")' in SETTINGS

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """首次引导合约：亲手按一次快捷键、用一次轮盘；不要权限；老用户不打扰。"""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 S = ROOT / "Sources" / "dok"
@@ -11,7 +12,7 @@ def main() -> None:
     app = (S / "DokApp.swift").read_text()
     state = (S / "AppState.swift").read_text()
     window = (S / "DokWheelWindow.swift").read_text()
-    settings = (S / "SettingsView.swift").read_text()
+    settings = settings_source()
 
     assert "forKey: .hasCompletedOnboarding)) ?? true" in state, "an existing config isn't a new user"
     assert "NSAlert" not in app.split("func showOnboarding", 1)[-1][:400] if "func showOnboarding" in app else True

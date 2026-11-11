@@ -55,6 +55,10 @@
 		FC9A0591A25A4D479D1E3404 /* shuffle.m in Sources */ = {isa = PBXBuildFile; fileRef = D4CFB0E8EBC34032D4A00882 /* shuffle.m */; };
 		FE97BDD2A3EA19D167FDCECB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B488B75027B1739850580F97 /* AppState.swift */; };
 		FF363701A85E289DC6058B3E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDCEB9B504D5C72CBB4D531A /* SettingsView.swift */; };
+		9FEA86B5A8C482B058A6C6E9 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ECEB6356CAD06DCFDB6B759 /* GeneralSettingsView.swift */; };
+		5B4288BFA649419F92A79917 /* KeyActionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 206E436A4D7B3C4F929A6B00 /* KeyActionEditor.swift */; };
+		AB9708014E7775DCE5123BFA /* WheelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251939D99911BA48539AE41F /* WheelSettingsView.swift */; };
+		A4E428FAF483C0F51B43B32D /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9360A9C460E3A2A68EA93A /* SettingsComponents.swift */; };
 		FF89D1DD35A62651EB3AB90C /* speed.m in Sources */ = {isa = PBXBuildFile; fileRef = 0428ECBFDE4A83753BE736EA /* speed.m */; };
 /* End PBXBuildFile section */
 
@@ -132,6 +136,10 @@
 		E20C41F50BC7C1A4E3197AAF /* MediaRemote.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MediaRemote.m; sourceTree = "<group>"; };
 		EF72F9B6DDF4389903FCA2CE /* stream.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = stream.m; sourceTree = "<group>"; };
 		FDCEB9B504D5C72CBB4D531A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		9ECEB6356CAD06DCFDB6B759 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
+		206E436A4D7B3C4F929A6B00 /* KeyActionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyActionEditor.swift; sourceTree = "<group>"; };
+		251939D99911BA48539AE41F /* WheelSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WheelSettingsView.swift; sourceTree = "<group>"; };
+		8B9360A9C460E3A2A68EA93A /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 		FED576761914C32F06FEE227 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -287,6 +295,10 @@
 				FED576761914C32F06FEE227 /* Localization.swift */,
 				AD7764F3BD47EEBD88F2C546 /* NowPlayingService.swift */,
 				FDCEB9B504D5C72CBB4D531A /* SettingsView.swift */,
+				9ECEB6356CAD06DCFDB6B759 /* GeneralSettingsView.swift */,
+				206E436A4D7B3C4F929A6B00 /* KeyActionEditor.swift */,
+				251939D99911BA48539AE41F /* WheelSettingsView.swift */,
+				8B9360A9C460E3A2A68EA93A /* SettingsComponents.swift */,
 			);
 			name = dok;
 			path = Sources/dok;
@@ -444,6 +456,10 @@
 				3038AECD8469E00A9A39B51B /* Localization.swift in Sources */,
 				17BA75C870AE2A91FE52A471 /* NowPlayingService.swift in Sources */,
 				FF363701A85E289DC6058B3E /* SettingsView.swift in Sources */,
+				9FEA86B5A8C482B058A6C6E9 /* GeneralSettingsView.swift in Sources */,
+				5B4288BFA649419F92A79917 /* KeyActionEditor.swift in Sources */,
+				AB9708014E7775DCE5123BFA /* WheelSettingsView.swift in Sources */,
+				A4E428FAF483C0F51B43B32D /* SettingsComponents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

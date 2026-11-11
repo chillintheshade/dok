@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the actual Swift service across disabled, enabled, and resumed states.
 
-A disposable sleep process occupies the helper slot so the test never launches
-a metadata helper or modifies the user's playback. All temporary files and child
+A disposable sleep process occupies the adapter-stream slot so the test never launches
+perl or modifies the user's playback (the test binary has no bundled adapter). All temporary files and child
 processes are removed after the test.
 """
 from pathlib import Path
@@ -39,20 +39,20 @@ extension NowPlayingService {
 
         service.setObservationEnabled(false)
         service.refreshForMenuPresentation()
-        service.startHelper()
-        precondition(!service.isObserving && service.helperProcess == nil)
+        service.updateAdapterStream()
+        precondition(!service.isObserving && service.adapterStreamProcess == nil)
         precondition(service.upkeepTimer == nil)
         precondition(!Self.mrRegistered, "disabled startup must not subscribe to MediaRemote")
 
         let originalHelper = try placeholderHelper()
-        service.helperProcess = originalHelper
+        service.adapterStreamProcess = originalHelper
         service.trackName = "Existing track"
         service.artistName = "Existing artist"
         let originalArtwork = NSImage(size: NSSize(width: 1, height: 1))
         service.albumArt = originalArtwork
         service.setObservationEnabled(true)
         precondition(service.isObserving && service.upkeepTimer?.isValid == true)
-        precondition(service.helperProcess === originalHelper)
+        precondition(service.adapterStreamProcess === originalHelper)
         let originalObservationID = service.observationID
         let originalTimer = service.upkeepTimer
         service.setObservationEnabled(true)
@@ -64,10 +64,10 @@ extension NowPlayingService {
         service.scheduleArtworkSettle(trackKey: "Existing track|Existing artist", data: Data())
         precondition(service.artworkSettleWorkItem != nil)
         service.setObservationEnabled(false)
-        precondition(!service.isObserving && service.helperProcess == nil)
+        precondition(!service.isObserving && service.adapterStreamProcess == nil)
         precondition(service.upkeepTimer == nil && originalTimer?.isValid == false)
         precondition(service.pendingClearWorkItem == nil && service.artworkSettleWorkItem == nil)
-        precondition(service.helperRestartWorkItem == nil)
+        precondition(service.adapterStreamRestartWorkItem == nil)
         precondition(service.observationID != originalObservationID)
         precondition(service.trackName == "Existing track" && service.albumArt === originalArtwork,
                      "disabling must preserve cached metadata without a visual reset")
@@ -77,14 +77,14 @@ extension NowPlayingService {
                                          playing: true, artworkData: nil))
         service.refreshForMenuPresentation()
         service.upkeep()
-        service.startHelper()
+        service.updateAdapterStream()
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        precondition(!originalHelper.isRunning, "disabling must terminate the helper")
-        precondition(service.trackName == disabledTrack && service.helperProcess == nil,
+        precondition(!originalHelper.isRunning, "disabling must terminate the stream")
+        precondition(service.trackName == disabledTrack && service.adapterStreamProcess == nil,
                      "queued reads must not update or resurrect a disabled service")
 
         let resumedHelper = try placeholderHelper()
-        service.helperProcess = resumedHelper
+        service.adapterStreamProcess = resumedHelper
         service.playingFrozenUntil = Date().addingTimeInterval(60)
         service.progressFrozenUntil = Date().addingTimeInterval(60)
         service.setObservationEnabled(true)

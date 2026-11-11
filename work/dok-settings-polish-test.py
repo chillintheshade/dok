@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """设置页打磨契约：滑块按档位实时吸附；按键动作页以组合键为主角、名称选填、目标应用用菜单选。"""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SETTINGS = (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text()
+SETTINGS = settings_source()
 SERVICE = (ROOT / "Sources" / "dok" / "KeyActionService.swift").read_text()
 STATE = (ROOT / "Sources" / "dok" / "AppState.swift").read_text()
 
 
 def main() -> None:
     # 滑块：拖动中就落在档位上，看到的值就是松手后的值；每档轻震，默认档换震感。
-    slider = SETTINGS.split("private struct SmoothSettingsSlider: View {", 1)[1].split("private extension View {", 1)[0]
+    slider = SETTINGS.split("struct SmoothSettingsSlider: View {", 1)[1].split("extension View {", 1)[0]
     assert "move(to: target)" in slider and "magnetized" not in slider
     assert ".onEnded { _ in\n                    dragging = false\n                })" in slider, "release never jumps"
     assert "next == defaultValue ? .alignment : .levelChange" in slider
@@ -22,7 +23,7 @@ def main() -> None:
     assert "static let defaultIconSize: Double = 48" in STATE
 
     # 按键动作页
-    editor = SETTINGS.split("private struct KeyActionEditor: View {", 1)[1].split("// MARK: - 通用设置", 1)[0]
+    editor = SETTINGS.split("struct KeyActionEditor: View {", 1)[1].split("// MARK: - 通用设置", 1)[0]
     assert ".frame(maxWidth: .infinity, alignment: .topLeading)" in editor, "fills the right-hand panel"
     assert "Button(Loc.string(\"link.cancel\")" not in editor, "the panel's Done closes it; no separate cancel"
     assert "LargeKeyCap(text: symbol)" in editor, "the combination is the hero"

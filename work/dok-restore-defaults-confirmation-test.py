@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """恢复默认：按钮原地展开确认，只有点“恢复”才执行；4 秒无操作自动收起，等于取消。"""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SETTINGS = ROOT / "Sources" / "dok" / "SettingsView.swift"
+SETTINGS = SETTINGS_SOURCE
 ZH = ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings"
 EN = ROOT / "Resources" / "en.lproj" / "Localizable.strings"
 

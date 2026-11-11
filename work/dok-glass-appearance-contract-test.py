@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_STATE = ROOT / "Sources" / "dok" / "AppState.swift"
 APP_SOURCE = ROOT / "Sources" / "dok" / "DokApp.swift"
 PIE_VIEW = ROOT / "Sources" / "dok" / "DokWheelView.swift"
-SETTINGS_VIEW = ROOT / "Sources" / "dok" / "SettingsView.swift"
+SETTINGS_VIEW = SETTINGS_SOURCE
 WHEEL_WINDOW = ROOT / "Sources" / "dok" / "DokWheelWindow.swift"
 
 

@@ -2,9 +2,11 @@
 """Exercise the native search field's composition/commit and focus lifetime."""
 from pathlib import Path
 import subprocess, tempfile
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 root = Path(__file__).resolve().parents[1]
-s = (root/'Sources/dok/SettingsView.swift').read_text()
-block = s[s.index('private final class AppPickerSearchField'):s.index('// MARK: - 交互模式')]
+s = settings_source()
+components = (root / 'Sources/dok/SettingsComponents.swift').read_text()
+block = components[components.index('final class AppPickerSearchField'):]  # the search field closes the shared-components file
 harness = r'''
 let app = NSApplication.shared
 var value = ""

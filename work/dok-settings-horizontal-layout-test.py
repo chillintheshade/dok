@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Settings layout contract for the quiet, monochrome in-window navigation design."""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SETTINGS = (ROOT / "Sources/dok/SettingsView.swift").read_text()
+SETTINGS = settings_source()
 APP = (ROOT / "Sources/dok/DokApp.swift").read_text()
 
 
@@ -23,8 +24,8 @@ for needle, description in [
     ("static let controlWidth: CGFloat = 130", "stable trailing control column"),
     ("static let dividerWidth: CGFloat = 0.5", "hairline divider"),
     ("static let selectedSurface = Color.primary.opacity(0.055)", "monochrome selection fill"),
-    ("private struct SettingsRootGlassLayer", "single root glass implementation"),
-    ("private struct SettingsWindowDragHandle", "dedicated settings window drag strip"),
+    ("struct SettingsRootGlassLayer", "single root glass implementation"),
+    ("struct SettingsWindowDragHandle", "dedicated settings window drag strip"),
     ("window?.performDrag(with: event)", "native window dragging from the explicit strip"),
     ("glass.style = .regular", "native regular root glass"),
     ("effect.material = .sidebar", "macOS 13-15 compatibility root material"),
@@ -40,9 +41,9 @@ for needle, description in [
     ("private var overviewColumn", "direct wheel actions"),
     (".frame(height: pieSize, alignment: .top)\n        .settingsInsetSurface()", "right column is one card as tall as the preview"),
     ("private var recentAppsControl", "recent content controls"),
-    ("private struct SettingsGroup", "shared low-contrast settings group"),
+    ("struct SettingsGroup", "shared low-contrast settings group"),
     (".settingsInsetSurface()", "semantic inset fill"),
-    ("private struct SettingRow", "stable settings row primitive"),
+    ("struct SettingRow", "stable settings row primitive"),
     (".frame(width: accessoryWidth, alignment: .trailing)", "trailing control alignment"),
     ("var accessoryWidth: CGFloat = SettingsDesign.controlWidth", "default trailing control column"),
     ("HStack(alignment: .top, spacing: SettingsDesign.sectionSpacing)", "balanced general columns"),
@@ -99,7 +100,7 @@ assert "editor.hasMarkedText()" in SETTINGS, (
 )
 assert "NSApplication.didBecomeActiveNotification" in SETTINGS
 assert "NSWindow.didBecomeKeyNotification" in SETTINGS
-search = SETTINGS.split("struct SearchField: NSViewRepresentable", 1)[1]
+search = (ROOT / "Sources/dok/SettingsComponents.swift").read_text().split("struct SearchField: NSViewRepresentable", 1)[1]
 assert "window.isVisible, window.isKeyWindow, NSApp.isActive" in search
 assert "window.makeFirstResponder(field)" in search
 assert "keyboardSelectionDidChangeNotification" not in search

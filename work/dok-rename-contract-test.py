@@ -106,7 +106,7 @@ def main() -> None:
                 source_legacy_hits.append((path.name, line.strip()))
     expected_legacy_hits = [
         ("AppState.swift", 'let dir = appSupport.appendingPathComponent("Arcly")'),
-        ("NowPlayingService.swift", '.appendingPathComponent("Arcly") else {'),
+        ("NowPlayingService.swift", '.appendingPathComponent("Arcly") else { return }'),
     ]
     assert source_legacy_hits == expected_legacy_hits, f"Unexpected legacy source references: {source_legacy_hits}"
 

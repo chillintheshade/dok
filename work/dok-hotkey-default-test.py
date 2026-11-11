@@ -19,9 +19,10 @@ def main() -> None:
         ("var modifiers: NSEvent.ModifierFlags = [.command]", "command-only default modifier"),
         ("53: \"Esc\"", "user-facing Escape key label"),
         ("init(keyCode: UInt16 = 53, modifiers: NSEvent.ModifierFlags = [.command])", "default initializer uses command + Escape"),
-        ("decoded.hotkey.keyCode == 2 && decoded.hotkey.modifiers == [.command, .shift]", "old default hotkey migration"),
-        ("decoded.hotkey.keyCode == 50 && decoded.hotkey.modifiers == [.command]", "command-grave default migration"),
-        ("重置为默认 ⌘Esc", "migration comment reflects new default"),
+        # 迁移的行为由 dok-logic-unit-test.py 实际运行检查；这里只确认规则还在。
+        ("HotkeyConfig(keyCode: 2, modifiers: [.command, .shift])", "old default hotkey migration"),
+        ("HotkeyConfig(keyCode: 50, modifiers: [.command])", "command-grave default migration"),
+        ("settings.hotkey = HotkeyConfig() // 默认 ⌘Esc", "migration resets to the new default"),
     ]
 
     for needle, reason in requirements:

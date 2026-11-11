@@ -21,9 +21,6 @@ def main() -> None:
     source = SOURCE.read_text()
 
     for needle, reason in [
-        ("private static let helperScript", "external MediaRemote helper script"),
-        ("private var helperProcess: Process?", "tracked persistent helper process"),
-        ("helperSwiftURL", "real developer-tool Swift fallback"),
         ("private func directRead", "in-process MediaRemote read path"),
         ("private func sendAdapterPlaybackCommand", "perl playback command channel"),
         ('process.arguments = [script.path, framework.path, "send", String(command)]', "send command arguments"),
@@ -32,6 +29,11 @@ def main() -> None:
         ("private func clearNowPlaying", "explicit clearing path"),
     ]:
         require(source, needle, reason)
+
+    # 旧的 Swift 工具链兜底已整体移除：perl adapter 是唯一的元数据来源。
+    for gone in ["helperScript", "helperProcess", "helperSwiftURL", "startHelper", "launchHelper",
+                 "scheduleHelperRestart", "residentHelperAvailable", "artworkStale: json"]:
+        assert gone not in source, f"the legacy swift-toolchain fallback must not return: {gone}"
 
     toggle = method(source, "func togglePlayPause()", "func nextTrack()")
     next_track = method(source, "func nextTrack()", "func previousTrack()")

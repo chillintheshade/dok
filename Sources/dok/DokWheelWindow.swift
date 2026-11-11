@@ -85,6 +85,10 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
     private(set) var isContextMenuOpen = false
     var onOpenSettings: (() -> Void)?
     var onDidHide: (() -> Void)?
+    /// 显示状态每次变化后调用；AppDelegate 靠它在轮盘开始收起的那一刻就交还数字键和方向键。
+    var onPresentationChanged: (() -> Void)?
+    /// 键盘选中时鼠标所在的位置。鼠标离开这一点 8pt 之前不接管选中，免得手一抖就把键盘高亮清掉。
+    private var keyboardMouseAnchor: NSPoint?
 
     private let windowSize: CGFloat = DokWheelView.windowSize
 
@@ -137,6 +141,7 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
 
     func showAt(point: NSPoint) {
         interaction.centerControlHover = nil
+        keyboardMouseAnchor = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
@@ -255,18 +260,7 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
             }
 
             // 点击应用图标 → 启动应用
-            let appToLaunch = self.selectedAppForActivation()
-            if appToLaunch != nil {
-                if self.appState.settings.soundEffects {
-                    NSSound(named: "Tink")?.play()
-                }
-            }
-            self.dismiss()
-            if let app = appToLaunch {
-                DispatchQueue.main.asyncAfter(deadline: .now() + (app.itemType == .keyAction ? 0 : 0.15)) {
-                    self.launchApp(app)
-                }
-            }
+            self.activateSelectionAndDismiss()
             return nil
         }
 
@@ -362,8 +356,59 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
         dismiss()
     }
 
+    /// 打开当前选中的项目并收起轮盘；没有选中项就只收起。点击和键盘确认共用。
+    private func activateSelectionAndDismiss() {
+        let appToLaunch = selectedAppForActivation()
+        if appToLaunch != nil, appState.settings.soundEffects {
+            NSSound(named: "Tink")?.play()
+        }
+        dismiss()
+        if let app = appToLaunch {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (app.itemType == .keyAction ? 0 : 0.15)) {
+                self.launchApp(app)
+            }
+        }
+    }
+
+    // MARK: - 键盘选择
+
+    /// 数字键直接打开；方向键移动高亮；回车打开高亮的那个。轮盘上不显示任何数字。
+    func handleKey(_ key: WheelKey) {
+        guard isPresented, !isContextMenuOpen else { return }
+        let count = appState.settings.apps.count
+        guard count > 0 else { return }
+
+        switch key {
+        case .digit(let digit):
+            guard let index = WheelKeyboardNavigation.slot(forDigit: digit, count: count) else { return }
+            selectByKeyboard(index)
+            activateSelectionAndDismiss()
+        case .arrow(let arrow):
+            let current = interaction.selectedRecentAppIndex == nil ? interaction.selectedIndex : nil
+            let target: Int?
+            if let current, current < count {
+                target = WheelKeyboardNavigation.step(from: current, arrow: arrow, count: count)
+            } else {
+                target = WheelKeyboardNavigation.nearestSlot(toward: arrow, count: count)
+            }
+            if let target { selectByKeyboard(target) }
+        case .confirm:
+            guard selectedAppForActivation() != nil else { return }
+            activateSelectionAndDismiss()
+        }
+    }
+
+    private func selectByKeyboard(_ index: Int) {
+        keyboardMouseAnchor = NSEvent.mouseLocation
+        applySelection(index: index, recentIndex: nil)
+    }
+
     func updateSelection() {
         let mouseLocation = NSEvent.mouseLocation
+        if let anchor = keyboardMouseAnchor {
+            guard hypot(mouseLocation.x - anchor.x, mouseLocation.y - anchor.y) >= 8 else { return }
+            keyboardMouseAnchor = nil
+        }
         let newRecentIndex = hitTester.satelliteIndex(at: mouseLocation, center: wheelCenter)
         let newIndex = newRecentIndex == nil ? hitTester.slotIndex(at: mouseLocation, center: wheelCenter) : nil
         let dx = mouseLocation.x - frame.midX
@@ -381,6 +426,11 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
             interaction.centerControlHover = hoveredControl
         }
 
+        applySelection(index: newIndex, recentIndex: newRecentIndex)
+    }
+
+    /// 鼠标和键盘共用的选中更新：高亮、触感和音效都在这里。
+    private func applySelection(index newIndex: Int?, recentIndex newRecentIndex: Int?) {
         // 仅在值变化时更新，禁用 Core Animation 隐式动画防止闪烁
         if interaction.selectedIndex != newIndex
             || interaction.selectedRecentAppIndex != newRecentIndex {
@@ -431,11 +481,7 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
             || distance < innerRadius || distance > outerRadius {
             newIndex = nil
         } else {
-            var angle = atan2(dy, dx)
-            if angle < 0 { angle += 2 * .pi }
-            let sliceAngle = (2 * Double.pi) / Double(appCount)
-            let adjustedAngle = fmod(angle + .pi / 2 + sliceAngle / 2, 2 * .pi)
-            newIndex = Int(adjustedAngle / sliceAngle) % appCount
+            newIndex = WheelSlotGeometry.slotIndex(dx: Double(dx), dy: Double(dy), count: appCount)
         }
 
         if interaction.selectedIndex != newIndex {
@@ -505,6 +551,7 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
 
     func dismiss() {
         interaction.centerControlHover = nil
+        keyboardMouseAnchor = nil
         revealWorkItem?.cancel()
         revealWorkItem = nil
         dismissWorkItem?.cancel()
@@ -563,6 +610,7 @@ class DokWheelWindow: NSWindow, WheelDropTarget {
         } else {
             startVisibilityGuard()
         }
+        onPresentationChanged?()
     }
 
     /// Hidden is ordered out *and* transparent: the native glass sampler does not

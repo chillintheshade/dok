@@ -7,6 +7,8 @@ struct DockNotificationBadgeSnapshot: Equatable {
     fileprivate var byPath: [String: String] = [:]
     fileprivate var byBundleIdentifier: [String: String] = [:]
     fileprivate var byTitle: [String: String] = [:]
+    fileprivate var bundlePaths: [String: String] = [:]
+    fileprivate var ambiguousBundleIdentifiers: Set<String> = []
 
     func badge(for app: AppItem) -> String? {
         guard app.itemType == .app, app.isRunning else { return nil }
@@ -25,12 +27,25 @@ struct DockNotificationBadgeSnapshot: Equatable {
     fileprivate mutating func insert(badge: String, url: URL?, title: String?) {
         guard !badge.isEmpty else { return }
 
+        // A Dock item that reports its URL is identified by that URL alone. Its title is not
+        // recorded: two apps can share a name (a second WeChat copy is also “微信”), and a
+        // title match would put one copy's badge on the other.
         if let url {
-            byPath[Self.normalizedPath(url.path)] = badge
+            let path = Self.normalizedPath(url.path)
+            byPath[path] = badge
             if let bundleIdentifier = Bundle(url: url)?.bundleIdentifier,
-               !bundleIdentifier.isEmpty {
-                byBundleIdentifier[bundleIdentifier] = badge
+               !bundleIdentifier.isEmpty,
+               !ambiguousBundleIdentifiers.contains(bundleIdentifier) {
+                if let known = bundlePaths[bundleIdentifier], known != path {
+                    // Two copies with one identifier: only the path can tell them apart.
+                    ambiguousBundleIdentifiers.insert(bundleIdentifier)
+                    byBundleIdentifier[bundleIdentifier] = nil
+                } else {
+                    bundlePaths[bundleIdentifier] = path
+                    byBundleIdentifier[bundleIdentifier] = badge
+                }
             }
+            return
         }
         if let title, !title.isEmpty {
             byTitle[Self.normalizedTitle(title)] = badge

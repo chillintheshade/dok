@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""常驻 helper 的生命周期契约。
+"""adapter stream 的生命周期契约。
 
-旧实现每次刷新都新起一个解释器进程，每次要付 1~3 秒编译成本，
-因此需要一整套在途排队逻辑。现在改为进程常驻、事件驱动推送，
-排队逻辑被取消，取而代之的要求是：不得重复拉起、异常退出要能恢复。
+最早的实现每次刷新都新起一个解释器进程，需要一整套在途排队逻辑；之后改成常驻的
+Swift 工具链 helper。两者都已移除：现在只有按需的 perl adapter stream。
+要求是：不得重复拉起、异常退出要能延迟恢复、停止观察时回收进程。
 """
 from pathlib import Path
 import re
@@ -13,36 +13,53 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "Sources" / "dok" / "NowPlayingService.swift"
 
 
+def body(source: str, signature: str) -> str:
+    match = re.search(re.escape(signature) + r" \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert match, f"{signature} body not found"
+    return match.group("body")
+
+
 def main() -> None:
     source = SOURCE.read_text()
 
-    start = re.search(r"private func startHelper\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert start, "startHelper body not found"
-    assert "guard helperProcess == nil" in start.group("body"), (
-        "helper must not be spawned again while one is already running"
+    start = body(source, "private func startAdapterStream()")
+    assert "guard adapterStreamProcess == nil" in start, (
+        "a stream must not be spawned again while one is already running"
     )
 
     # 意外退出后要能恢复，但要延迟重启，避免异常时进程被反复拉起。
-    assert "private func helperDidTerminate()" in source, "helper termination should be handled"
-    term = re.search(r"private func helperDidTerminate\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert term, "helperDidTerminate body not found"
-    term_body = term.group("body")
-    assert "guard isObserving else { return }" in term_body, "a stopped service must not resurrect the helper"
-    assert "scheduleHelperRestart(" in term_body, "helper restart should be delayed, not immediate"
-    restart = re.search(r"private func scheduleHelperRestart\(quickFailure: Bool\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert restart and "asyncAfter" in restart.group("body"), "restart goes through a delayed work item"
+    exited = body(source, "private func adapterStreamDidTerminate(status: Int32, wasSignal: Bool, observationID: UUID)")
+    assert "guard isObserving, self.observationID == observationID else { return }" in exited, (
+        "a stopped service must not resurrect the stream"
+    )
+    assert "guard adapterUsable else { return }" in exited, "repeated failures stop the restart loop"
+    assert "asyncAfter" in exited, "restart goes through a delayed work item"
 
-    # 停止观察时必须回收进程，避免泄漏常驻子进程。
-    stop = re.search(r"func stopObserving\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert stop, "stopObserving body not found"
-    assert "stopHelper()" in stop.group("body"), "stopObserving must terminate the persistent helper"
-    assert "proc.terminate()" in source, "helper process should be terminated explicitly"
+    # 失败累计后不换后端：停掉 stream，等下一次唤出再试。
+    failure = body(source, "private func recordAdapterFailure()")
+    assert "stopAdapterStream()" in failure and "canSeek = false" in failure
+    update = body(source, "private func updateAdapterStream()")
+    assert "Self.adapterAvailable" in update and "adapterUsable" not in update, (
+        "every summon retries the adapter even after the failure limit"
+    )
 
-    # 每次刷新起一个进程的旧模型不应回归。
-    assert "refreshQueuedAfterInFlight" not in source, "per-refresh process queueing should be gone"
-    assert "activeRefreshID" not in source, "per-refresh id tracking should be gone"
+    # 停止观察时必须回收进程，避免泄漏子进程。
+    stop = body(source, "func stopObserving()")
+    assert "stopAdapterStream()" in stop, "stopObserving must terminate the stream"
+    assert "process.terminate()" in body(source, "private func stopAdapterStream()")
 
-    print("Now-playing helper lifecycle contract passed.")
+    # 旧模型不应回归。
+    for gone in ["refreshQueuedAfterInFlight", "activeRefreshID", "helperProcess", "startHelper",
+                 "scheduleHelperRestart", "helperScript"]:
+        assert gone not in source, f"removed now-playing machinery must not return: {gone}"
+
+    # 旧版本写进 Application Support 的脚本在启动时清掉。
+    cleanup = body(source, "private static func removeLegacyHelperScripts()")
+    assert '"mr_watch.swift"' in cleanup and "removeItem" in cleanup
+    assert "Self.removeLegacyHelperScripts()" in body(source, "func startObserving()")
+    assert not (ROOT / "Sources" / "Helper").exists(), "the readable helper copy is gone with the helper"
+
+    print("Now-playing stream lifecycle contract passed.")
 
 
 if __name__ == "__main__":

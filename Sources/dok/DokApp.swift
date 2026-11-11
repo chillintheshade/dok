@@ -29,6 +29,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     var hotKeyRef: EventHotKeyRef?
     private var escapeHotKeyRef: EventHotKeyRef?
+    private var wheelKeyHotKeyRefs: [EventHotKeyRef] = []
+    private static let wheelKeyHotKeyBaseID: UInt32 = 100
+    /// 轮盘显示期间临时接管的按键：主键盘和小键盘的数字、方向键、回车。
+    private static let wheelKeys: [(keyCode: UInt32, key: WheelKey)] = [
+        (18, .digit(1)), (19, .digit(2)), (20, .digit(3)), (21, .digit(4)), (23, .digit(5)),
+        (22, .digit(6)), (26, .digit(7)), (28, .digit(8)), (25, .digit(9)), (29, .digit(0)),
+        (83, .digit(1)), (84, .digit(2)), (85, .digit(3)), (86, .digit(4)), (87, .digit(5)),
+        (88, .digit(6)), (89, .digit(7)), (91, .digit(8)), (92, .digit(9)), (82, .digit(0)),
+        (126, .arrow(.up)), (125, .arrow(.down)), (123, .arrow(.left)), (124, .arrow(.right)),
+        (36, .confirm), (76, .confirm),
+    ]
     /// Derived from the wheel's state machine so the trigger never disagrees with the window.
     var isMenuOpen: Bool { wheelWindow?.isPresented ?? false }
     private var pinnedController: PinnedWheelController?
@@ -508,7 +519,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                                       nil, MemoryLayout<EventHotKeyID>.size, nil, &pressedID)
                     DispatchQueue.main.async {
-                        if pressedID.id == 2 {
+                        if pressedID.id >= AppDelegate.wheelKeyHotKeyBaseID {
+                            if eventKind == UInt32(kEventHotKeyPressed) {
+                                delegate.handleWheelKeyHotKey(Int(pressedID.id - AppDelegate.wheelKeyHotKeyBaseID))
+                            }
+                        } else if pressedID.id == 2 {
                             if eventKind == UInt32(kEventHotKeyPressed) { delegate.handleEscapeHotKey() }
                         } else if eventKind == UInt32(kEventHotKeyPressed) {
                             delegate.handleHotKeyDown()
@@ -550,6 +565,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UnregisterEventHotKey(ref)
             escapeHotKeyRef = nil
         }
+    }
+
+    /// 数字键、方向键和回车同样收不到，轮盘显示期间临时注册成热键；一开始收起就交还，
+    /// 不会吞掉你接下来在别的应用里打的字。按住模式下修饰键还按着，这些键不会触发。
+    private func updateWheelKeyHotKeys() {
+        let needed = isMenuOpen
+        if needed, wheelKeyHotKeyRefs.isEmpty {
+            for (offset, entry) in Self.wheelKeys.enumerated() {
+                let id = EventHotKeyID(signature: OSType(0x50494531), id: Self.wheelKeyHotKeyBaseID + UInt32(offset))
+                var ref: EventHotKeyRef?
+                if RegisterEventHotKey(entry.keyCode, 0, id, GetApplicationEventTarget(), 0, &ref) == noErr,
+                   let ref {
+                    wheelKeyHotKeyRefs.append(ref)
+                }
+            }
+        } else if !needed, !wheelKeyHotKeyRefs.isEmpty {
+            for ref in wheelKeyHotKeyRefs { UnregisterEventHotKey(ref) }
+            wheelKeyHotKeyRefs.removeAll()
+        }
+    }
+
+    func handleWheelKeyHotKey(_ offset: Int) {
+        guard offset >= 0, offset < Self.wheelKeys.count else { return }
+        wheelWindow?.handleKey(Self.wheelKeys[offset].key)
     }
 
     func handleEscapeHotKey() {
@@ -626,6 +665,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let created = DokWheelWindow(appState: appState)
             created.onOpenSettings = { [weak self] in
                 self?.openSettings()
+            }
+            created.onPresentationChanged = { [weak self] in
+                self?.updateWheelKeyHotKeys()
             }
             created.onDidHide = { [weak self] in
                 self?.updateEscapeHotKey()

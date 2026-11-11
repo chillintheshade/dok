@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+import pathlib
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_STATE = (ROOT / "Sources/dok/AppState.swift").read_text()
-SETTINGS = (ROOT / "Sources/dok/SettingsView.swift").read_text()
+SETTINGS = settings_source()
 DOK_APP = (ROOT / "Sources/dok/DokApp.swift").read_text()
 
 assert "hotkeyRecordingCancelled" in APP_STATE
@@ -22,8 +24,8 @@ assert ".onReceive(NotificationCenter.default.publisher(for: .hotkeyRecordingCan
 assert ".onDisappear" in SETTINGS
 
 recorder_start = SETTINGS.index("struct HotkeyRecorderRow")
-recorder_end = SETTINGS.index("// MARK: - 按键帽组件", recorder_start)
-recorder = SETTINGS[recorder_start:recorder_end]
+recorder = (pathlib.Path(__file__).resolve().parents[1] / "Sources/dok/GeneralSettingsView.swift").read_text()
+recorder = recorder[recorder.index("struct HotkeyRecorderRow"):]  # the last view in the General page file
 assert recorder.count("stopRecording()") >= 4
 assert "NSEvent.removeMonitor(m)" in recorder
 assert "localMonitor = nil" in recorder

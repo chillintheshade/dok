@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """最近内容卫星的持久化、筛选、快照、布局、状态与交互契约。"""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,7 +9,7 @@ STATE = (ROOT / "Sources" / "dok" / "AppState.swift").read_text()
 VIEW = (ROOT / "Sources" / "dok" / "DokWheelView.swift").read_text()
 WINDOW = (ROOT / "Sources" / "dok" / "DokWheelWindow.swift").read_text() + (ROOT / "Sources" / "dok" / "WheelInteraction.swift").read_text()
 APP = (ROOT / "Sources" / "dok" / "DokApp.swift").read_text()
-SETTINGS = (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text()
+SETTINGS = settings_source()
 EN = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 ZH = (ROOT / "Resources" / "zh-Hans.lproj" / "Localizable.strings").read_text()
 

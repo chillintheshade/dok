@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """轮盘常驻合约：三种模式、点击穿透、拖动不误触、小圆点、与快捷键共存。"""
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 S = ROOT / "Sources" / "dok"
@@ -8,7 +9,7 @@ S = ROOT / "Sources" / "dok"
 
 def main() -> None:
     state = (S / "AppState.swift").read_text()
-    settings = (S / "SettingsView.swift").read_text()
+    settings = settings_source()
     app = (S / "DokApp.swift").read_text()
     view = (S / "DokWheelView.swift").read_text()
     window = (S / "PinnedWheelWindow.swift").read_text()

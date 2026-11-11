@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = (ROOT / "project.yml").read_text()
 PACKAGE = (ROOT / "Package.swift").read_text()
 WHEEL = (ROOT / "Sources" / "dok" / "DokWheelView.swift").read_text()
-SETTINGS = (ROOT / "Sources" / "dok" / "SettingsView.swift").read_text()
+SETTINGS = settings_source()
 
 
 def require(source: str, needle: str, reason: str) -> None:

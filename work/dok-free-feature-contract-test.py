@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +26,7 @@ for forbidden in (
 app_state = (SOURCES / "AppState.swift").read_text()
 assert "static let maxSlots = 12" in app_state, "all users should receive 12 wheel slots"
 
-settings = (SOURCES / "SettingsView.swift").read_text()
+settings = settings_source()
 assert "private let maxSlots = AppState.maxSlots" in settings
 assert "private var isFull: Bool { appState.settings.apps.count >= maxSlots }" in settings
 

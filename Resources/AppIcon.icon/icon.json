@@ -1,14 +1,14 @@
 {
   "fill": {
-    "solid": "srgb:0.03137,0.03922,0.06275,1.00000"
+    "solid": "srgb:0.10588,0.11373,0.12941,1.00000"
   },
   "groups": [
     {
       "layers": [
         {
           "glass": false,
-          "image-name": "dok-ripple.png",
-          "name": "dok-ripple",
+          "image-name": "dok-d.png",
+          "name": "dok-d",
           "position": {
             "scale": 1,
             "translation-in-points": [

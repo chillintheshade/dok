@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""helper stdout 必须边跑边读。
+"""adapter stdout 必须边跑边读。
 
 封面数据可能很大，等到进程结束再一次性读取会把管道写满并造成死锁。
-常驻 helper 更是永不退出，只能流式读取。
+stream 在轮盘打开期间不退出，只能流式读取。
 """
 from pathlib import Path
 import re
@@ -14,21 +14,21 @@ SOURCE = ROOT / "Sources" / "dok" / "NowPlayingService.swift"
 
 def main() -> None:
     source = SOURCE.read_text()
-    match = re.search(r"private func launchHelper\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
-    assert match, "launchHelper body not found"
+    match = re.search(r"private func startAdapterStream\(\) \{(?P<body>.*?)\n    \}\n", source, re.S)
+    assert match, "startAdapterStream body not found"
     body = match.group("body")
 
     assert "readabilityHandler" in body, (
-        "helper stdout must be drained while the process is running; large artwork "
-        "can otherwise fill the pipe and stall the helper"
+        "stream stdout must be drained while the process is running; large artwork "
+        "can otherwise fill the pipe and stall the adapter"
     )
     assert "availableData" in body, "stdout draining should append chunks from availableData"
     assert "readDataToEndOfFile" not in body, (
-        "a persistent helper never terminates; waiting for EOF would block forever"
+        "a stream does not terminate while the wheel is open; waiting for EOF would block"
     )
 
     # 分片可能切断一行 JSON，必须按换行重组后再解析。
-    assert "helperBuffer.append(chunk)" in body, "chunks must be reassembled into whole lines"
+    assert "buffer.append(chunk)" in body, "chunks must be reassembled into whole lines"
     assert "private final class LineBuffer" in source, "line reassembly buffer should exist"
     assert "firstIndex(of: 0x0A)" in source, "buffer should split on newline boundaries"
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""按需推送契约：唤出时启动 stream、收起即停；切歌等待态；常驻兜底自愈。"""
+"""按需推送契约：唤出时启动 stream、收起即停；切歌等待态；失败后下次唤出重试。"""
 from pathlib import Path
 import re
 
@@ -18,7 +18,7 @@ def body(signature: str) -> str:
 
 def main() -> None:
     present = body("func beginConsuming(_ consumer: NowPlayingConsumer)")
-    for needle in ["consumers.insert(consumer)", "updateAdapterStream()", "healResidentHelperOnPresentation()"]:
+    for needle in ["consumers.insert(consumer)", "updateAdapterStream()"]:
         assert needle in present, f"summon must run: {needle}"
 
     dismiss = body("func endConsuming(_ consumer: NowPlayingConsumer)")
@@ -37,9 +37,11 @@ def main() -> None:
     assert "asyncAfter" in exited, "an unexpected exit while still needed restarts after a delay"
 
     failure = body("private func recordAdapterFailure()")
-    assert "startHelper()" in failure, "repeated failures enable the fallback"
+    assert "stopAdapterStream()" in failure and "startHelper" not in failure, (
+        "repeated failures stop the stream; there is no second backend"
+    )
     accept = body("private func acceptAdapterSnapshot(_ snapshot: NowPlayingSnapshot)")
-    assert "if helperProcess != nil { stopHelper() }" in accept, "a recovered adapter retires the fallback"
+    assert "adapterFailures = 0" in accept and "canSeek = true" in accept, "one good read restores the adapter"
 
     # 切歌锁：播放器切歌期间丢弃命令，按钮显示不可点；被拒的点击不发命令、不排队。
     for command, direction in [("func nextTrack()", ".forward"), ("func previousTrack()", ".backward")]:
@@ -136,10 +138,8 @@ def main() -> None:
     assert "animated: nextCardAnimated" in body("private func commitTrackCard()")
     assert "nowPlaying.trackCard?.animated == false ? nil : trackInfoAnimation" in VIEW
 
-    heal = body("private func healResidentHelperOnPresentation()")
-    assert "trackName.isEmpty, runningMusicApp != nil" in heal, "no data on summon restarts the fallback"
     wake = body("private func handleSystemWake()")
-    assert "stopHelper()" in wake and "startHelper()" in wake and "readAdapterOnce()" in wake
+    assert "readAdapterOnce()" in wake and "Helper" not in wake, "waking re-reads through the adapter only"
     assert "NSWorkspace.didWakeNotification" in SERVICE
 
     print("Now-playing on-demand contract passed.")

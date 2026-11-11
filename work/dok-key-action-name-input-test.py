@@ -2,9 +2,10 @@
 """Exercise the production NSTextInputClient's IME preedit/commit path offscreen."""
 from pathlib import Path
 import subprocess, tempfile
+from dok_settings_source import SETTINGS_SOURCE, settings_source  # noqa: E402
 root = Path(__file__).resolve().parents[1]
-source = (root / 'Sources/dok/SettingsView.swift').read_text()
-block = source[source.index('private final class KeyActionNameTextView'):source.index('private struct KeyActionRecorderInput')]
+source = settings_source()
+block = source[source.index('final class KeyActionNameTextView'):source.index('struct KeyActionRecorderInput')]
 harness = r'''
 let application = NSApplication.shared
 var value = ""
