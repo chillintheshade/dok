@@ -32,14 +32,15 @@ Dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Ap
 
 [View the changelog / 查看更新说明](CHANGELOG.md) — keyboard-action slots, website icons, undo, native-glass refinements, and Chinese search-input fixes / 按键动作槽位、网站图标、撤销、原生玻璃优化及中文搜索输入修正。
 
-## Latest Update: 1.6.0 / 最新更新：1.6.0
+## Latest Update: 1.7.0 / 最新更新：1.7.0
 
-- Pinned wheel: keep it on the desktop, or as a small orb on top of everything, and drag it anywhere / 轮盘常驻：留在桌面，或以小圆点置于最顶层，可任意拖动
-- First-run guide: press the shortcut once and use the wheel once / 首次引导：亲手按一次快捷键、用一次轮盘
-- Esc now closes the wheel when Dok isn't frontmost / Dok 不在前台时也能按 Esc 关闭轮盘
+- New icon: a standing Dock and the wheel fused into one piece of glass, the lowercase d of Dok / 新图标：立起来的 Dock 和轮盘合成一片玻璃，正好是 Dok 的小写 d
+- Keyboard selection: number keys open a slot (counted clockwise from 12 o'clock), arrows move the highlight, Return opens it / 键盘选择：数字键从 12 点顺时针数、按下即打开，方向键移动高亮，回车打开
+- Two copies of the same app (e.g. a second WeChat) no longer share notification badges / 双开同名应用（如两个微信）时角标不再串号
+- Track info now always comes from the bundled adapter; the old developer-tools fallback is gone / 歌曲信息统一由内置 adapter 读取，移除旧的开发者工具兜底
 - Developer ID-signed, not Apple-notarized / 已使用 Developer ID 签名，未进行 Apple 公证
 
-[Release notes and download / 更新说明与下载 Dok 1.6.0](https://github.com/chillintheshade/dok/releases/tag/v1.6.0)
+[Release notes and download / 更新说明与下载 Dok 1.7.0](https://github.com/chillintheshade/dok/releases/tag/v1.7.0)
 
 ## Preview / 预览
 
@@ -71,6 +72,8 @@ Dok 需要 macOS 13.0 或更高版本，并以 Universal 2 形式同时支持 Ap
   右键运行中的应用槽位，可直接退出该应用
 - Launch by hotkey or mouse button, in click or hold-and-release mode  
   支持快捷键或鼠标按键唤出，可选「点击」或「按住-松开」两种模式
+- Pick a slot from the keyboard after summoning: number keys, arrows and Return — nothing is drawn on the wheel  
+  唤出后可用键盘选择：数字键、方向键和回车，轮盘上不显示任何数字
 - Adjustable radius, icon size, opacity, theme, and position; English and Simplified Chinese UI  
   半径、图标、透明度、主题、唤出位置皆可调；支持英文和简体中文界面
 
@@ -80,9 +83,9 @@ Download the latest DMG from [GitHub Releases](https://github.com/chillintheshad
 
 从 [GitHub Releases](https://github.com/chillintheshade/dok/releases/latest) 下载最新 DMG，然后把 `Dok.app` 拖到 `/Applications`。
 
-Version 1.6.0 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
+Version 1.7.0 is Developer ID-signed but is not Apple-notarized. macOS may block the first launch.
 
-1.6.0 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
+1.7.0 已使用 Developer ID 证书签名，但未进行 Apple 公证；macOS 可能拦截首次打开。
 
 ## Build From Source / 从源码构建
 
